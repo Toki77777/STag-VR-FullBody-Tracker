@@ -60,7 +60,6 @@ public:
 
     bool mainThreadRunning = false;
     bool cameraRunning = false;
-    bool showTimeProfile = false;
 
 private:
     void CameraLoop();

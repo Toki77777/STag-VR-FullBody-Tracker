@@ -1,10 +1,10 @@
 #pragma once
 
-#include "AprilTagWrapper.hpp"
 #include "GUI.hpp"
 #include "OpenVRClient.hpp"
 #include "PlayspaceCalib.hpp"
 #include "RefPtr.hpp"
+#include "StagWrapper.hpp"
 #include "TrackerUnit.hpp"
 #include "VideoCapture.hpp"
 #include "VRDriver.hpp"
@@ -25,7 +25,7 @@ public:
         : mConfig(config),
           camCalib(calibConfig->cameras[0]),
           videoStream(mConfig->videoStreams[0]),
-          april(AprilTagWrapper::ConvertFamily(mConfig->markerLibrary), videoStream->quadDecimate, mConfig->apriltagThreadCount),
+          stagDetector(StagWrapper::ConvertLibrary(mConfig->markerLibrary), videoStream->quadDecimate),
           trackerNum(mConfig->trackerNum),
           mPlayspace(playspace),
           mVRDriver(vrDriver)
@@ -45,7 +45,7 @@ public:
         // shallow copy, gray will be cloned from image and used for detection,
         // so drawing can happen on color image without clone.
         drawImg = frame.image;
-        AprilTagWrapper::ConvertGrayscale(frame.image, grayAprilImg);
+        StagWrapper::ConvertGrayscale(frame.image, grayImg);
         const bool previewIsVisible = gui->IsPreviewVisible();
 
         const auto stampBeforeDetect = utils::SteadyTimer::Now();
@@ -66,12 +66,12 @@ public:
         if (!circularWindow) framesSinceLastSeen = 0;
 
         // define our mask image. We want to create an image where everything but circles around predicted tracker positions will be black to speed up detection.
-        if (GetMatSize(maskSearchImg) != GetMatSize(grayAprilImg))
+        if (GetMatSize(maskSearchImg) != GetMatSize(grayImg))
         {
-            maskSearchImg.create(GetMatSize(grayAprilImg), CV_8U);
+            maskSearchImg.create(GetMatSize(grayImg), CV_8U);
         }
         maskSearchImg = cv::Scalar(0); // fill with empty pixels
-        const int searchRadius = static_cast<int>(static_cast<double>(grayAprilImg.rows) * videoStream->searchWindow);
+        const int searchRadius = static_cast<int>(static_cast<double>(grayImg.rows) * videoStream->searchWindow);
         bool atleastOneTrackerVisible = false;
 
         const double frameTimeBeforeDetect = duration_cast<utils::FSeconds>(stampBeforeDetect - frame.timestamp).count();
@@ -145,13 +145,13 @@ public:
         // using copyTo with masking creates the image where everything but the locations where trackers are predicted to be is black
         if (atleastOneTrackerVisible)
         {
-            grayAprilImg.copyTo(tempGrayMaskedImg, maskSearchImg);
-            grayAprilImg = tempGrayMaskedImg;
+            grayImg.copyTo(tempGrayMaskedImg, maskSearchImg);
+            grayImg = tempGrayMaskedImg;
         }
 
         mCalibrator.Update(vrClient, mVRDriver, gui, mPlayspace, trackerCtrl->lockHeightCalib, trackerCtrl->manualRecalibrate);
 
-        april.DetectMarkers(grayAprilImg, dets);
+        stagDetector.DetectMarkers(grayImg, dets);
         // frame time is how much time passed since frame was acquired.
         const double frameTimeAfterDetect = duration_cast<utils::FSeconds>(utils::SteadyTimer::Now() - frame.timestamp).count();
         for (int index = 0; index < trackerUnits->size(); ++index)
@@ -255,10 +255,6 @@ public:
             const cv::Size2i drawSize = ConstrainSize(GetMatSize(frame.image), DRAW_IMG_SIZE);
             cv::resize(drawImg, outImg, drawSize);
             cv::putText(outImg, std::to_string(frameTimeAfterDetect).substr(0, 5), cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 255, 255));
-            if (false) // TODO: tracker->showTimeProfile (is this even needed?)
-            {
-                april.DrawTimeProfile(outImg, cv::Point(10, 60));
-            }
             gui->UpdatePreview(outImg);
         }
         // time of marker detection
@@ -268,7 +264,7 @@ private:
     RefPtr<UserConfig> mConfig;
     RefPtr<const cfg::CameraCalib> camCalib;
     RefPtr<const cfg::VideoStream> videoStream;
-    AprilTagWrapper april;
+    StagWrapper stagDetector;
     Index trackerNum;
     RefPtr<PlayspaceCalib> mPlayspace;
     RefPtr<VRDriver> mVRDriver;
@@ -278,7 +274,7 @@ private:
     tracker::CapturedFrame frame{};
     cv::Mat drawImg{};
     cv::Mat outImg{};
-    cv::Mat grayAprilImg{};
+    cv::Mat grayImg{};
     cv::Mat maskSearchImg{};
     cv::Mat tempGrayMaskedImg{};
 

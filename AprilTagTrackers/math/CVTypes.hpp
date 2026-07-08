@@ -33,7 +33,7 @@ using CPoint = typename detail::CPoint<T, N>::Type;
 
 using RodriguesVec3d = utils::StrongType<cv::Vec3d, struct RodriguesVecTag_>;
 using ArucoBoardSharedPtr = cv::Ptr<cv::aruco::Board>;
-/// 4 corners of marker in cw order, output from apriltagwrapper
+/// 4 corners of marker in cw order, output from StagWrapper
 using MarkerCorners2f = std::vector<cv::Point2f>;
 /// 4 corners of marker in cw order, most opencv aruco functions use this
 using MarkerCorners3f = std::vector<cv::Point3f>;

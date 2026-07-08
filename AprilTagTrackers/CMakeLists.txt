@@ -8,11 +8,10 @@ add_executable(AprilTagTrackers)
 
 # sources used in both testing and non testing builds
 set(ATT_TESTABLE_SOURCES
-    AprilTagWrapper.cpp
+    StagWrapper.cpp
     Helpers.cpp
     Quaternion.cpp
     Tracker.cpp
-    tagCustom29h10.cpp
     ImageDrawing.cpp
 
     tracker/OpenVRClient.cpp
@@ -59,7 +58,7 @@ find_package(Threads REQUIRED)
 find_package(wxWidgets CONFIG REQUIRED)
 find_package(OpenCV CONFIG REQUIRED)
 find_package(libusb CONFIG REQUIRED)
-find_package(apriltag CONFIG REQUIRED)
+find_package(stag CONFIG REQUIRED)
 find_package(openvr CONFIG REQUIRED)
 find_package(doctest CONFIG REQUIRED)
 find_package(Taskflow CONFIG REQUIRED)
@@ -69,7 +68,7 @@ target_link_libraries(AprilTagTrackers PRIVATE
     wx::core wx::base
     ${OpenCV_LIBRARIES}
     ${LIBUSB_LIBRARIES}
-    apriltag::apriltag
+    stag::stag
     openvr::openvr_api
     doctest::doctest
     Taskflow::Taskflow
