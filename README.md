@@ -12,7 +12,7 @@ Ask in the help channel of our discord server: https://discord.gg/g2ctkXB4bb
 
 # April-Tag-VR-FullBody-Tracker
 
-Full-body tracking in VR using AprilTag markers.
+Full-body tracking in VR using STag markers.
 
 This is my second attempt at creating a full-body tracking system using fiducial markers. This should enable people to get fullbody tracking for free, using only a phone and some cardboard. It is possible to get pretty good tracking with trackers of sizes as small as 10cm and a PS eye camera of 640x480 resolution. Increasing the marker size or using a higher resolution and faster phone camera further improves tracking.
 
@@ -20,7 +20,11 @@ This is my second attempt at creating a full-body tracking system using fiducial
 
 To use, you will have to make three trackers - one for each leg and one for hips. Using only leg trackers will not work in VRChat!
 
-This version uses the much more accurate AprilTag system and includes many improvements to make the system easier to use, such as a GUI interface and a more straightforward  calibration.
+This version uses STag, a stable, occlusion-resistant fiducial marker system, and includes many improvements to make the system easier to use, such as a GUI interface and a more straightforward  calibration.
+
+### Printing markers
+
+The [images-to-print](images-to-print) folder contains ready-to-print A4 and US-letter sheets of STag (HD11) markers, sized and positioned for the default tracker setup. If you need more markers, or markers of a different size, you can generate your own with [utilities/generate_stag_markers.py](utilities/generate_stag_markers.py) (requires Python with numpy, opencv-python and pillow installed).
 
 If you have any issues or encounter any bugs, feel free to open an issue on github or message me on discord: https://discord.gg/g2ctkXB4bb
 
@@ -80,9 +84,9 @@ That should be it! In case you try it before a more detailed guide is up, we are
 If anything goes wrong when building, please notify us in the discord/via a github issue!
 
 ## Sources
-Olson, Edwin. "AprilTag: A robust and flexible visual fiducial system." 2011 IEEE International Conference on Robotics and Automation. IEEE, 2011.
+Benligiray, B., Topal, C., Akinlar, C. "STag: A stable fiducial marker system." Image and Vision Computing, 2019.
 
-https://github.com/AprilRobotics/apriltag
+https://github.com/ManfredStoiber/stag
 
 WxWidgets: A Cross-Platform GUI Library
 
