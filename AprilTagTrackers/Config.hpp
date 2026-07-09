@@ -40,7 +40,7 @@ public:
     REFLECTABLE_BEGIN;
     REFLECTABLE_FIELD(std::string, windowTitle);
     // Keep synced with Localization::LANG_CODE_MAP
-    ATT_SERIAL_COMMENT("en, ru, zh-cn");
+    ATT_SERIAL_COMMENT("en, ja, ru, zh-cn");
     REFLECTABLE_FIELD(std::string, langCode) = "en";
     REFLECTABLE_FIELD(int, trackerNum) = 3;
     REFLECTABLE_FIELD(cfg::Validated<double>, markerSize){5.0, cfg::GreaterEqual(0.01)};
