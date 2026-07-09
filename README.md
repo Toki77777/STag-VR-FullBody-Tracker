@@ -14,8 +14,6 @@ STag マーカーを使った VR 用フルボディトラッキング。
 
 [images-to-print](images-to-print) フォルダには、印刷してすぐに使える A4 の STag（HD11）マーカーシートが入っています。マーカーは 93mm（黒い正方形の辺の長さ）で、デフォルトのトラッカー構成に合わせてサイズと配置が調整されています。各ページには 1 つのトラッカーの表面（front）または裏面（back）のマーカーペアが配置されているため、トラッカーごとに表面ページ 1 枚と裏面ページ 1 枚を印刷してください（同じトラッカーの表面シートと裏面シートには、その同一トラッカーに属する異なるマーカー ID が印刷されています）。より多くのマーカーが必要な場合や、別サイズのマーカーが必要な場合は、[utilities/generate_stag_markers.py](utilities/generate_stag_markers.py) で自分で生成できます（numpy、opencv-python、pillow をインストールした Python が必要です）。
 
-問題が発生したりバグを見つけたりした場合は、GitHub で issue を立てるか、Discord でメッセージを送ってください: https://discord.gg/g2ctkXB4bb
-
 プログラムは [releases](https://github.com/Toki77777/STag-VR-FullBody-Tracker/releases) タブからダウンロードできます。
 
 ![demo](images/demo.gif)
