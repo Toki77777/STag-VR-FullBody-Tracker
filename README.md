@@ -23,7 +23,7 @@ STag マーカーを使った VR 用フルボディトラッキング。
 
 ## ビルド手順:
 
-**注意: これは開発者向けです。コードを書くつもりはなく、アプリを使いたいだけの場合は、[Wiki](https://github.com/Toki77777/STag-VR-FullBody-Tracker/wiki) にチュートリアルがあります。**
+**注意: これは開発者向けです。~~コードを書くつもりはなく、アプリを使いたいだけの場合は、[Wiki](https://github.com/Toki77777/STag-VR-FullBody-Tracker/wiki) にチュートリアルがあります。~~**
 
 本プロジェクトは CMake プロジェクトです。CMake とお好みの IDE / コンパイラを使ってビルドできますし、CMake プロジェクトを直接開ける IDE もあります。
 
@@ -50,11 +50,9 @@ cmake -B build
 cmake --build build --config Release --target install
 ```
 
-以上です！ 詳しいガイドが公開される前に試す場合でも、Discord サーバーでいつでもサポートします！（リンクは上記）
-
 ### トラブルシューティング
 
-ビルド時に何か問題が発生した場合は、Discord または GitHub issue でお知らせください！
+ビルド時に何か問題が発生した場合は、GitHub issue でお知らせください！
 
 ## 参考文献 / ソース
 Benligiray, B., Topal, C., Akinlar, C. "STag: A stable fiducial marker system." Image and Vision Computing, 2019.
