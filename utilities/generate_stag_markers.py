@@ -36,9 +36,20 @@ Render a specific set of ids::
     python3 generate_stag_markers.py --hd 15 --ids 0 1 2 --out out_dir
 
 Build a print-ready A4 sheet with an explicit id layout (2 columns x 3
-rows per page, new page every 6 ids, ``-`` for an empty slot)::
+rows per page -- the default grid shape -- new page every 6 ids, ``-``
+for an empty slot)::
 
-    python3 generate_stag_markers.py --sheet a4 --marker-size-mm 47.5 \\
+    python3 generate_stag_markers.py --sheet a4 --marker-size-mm 93.0 \\
+        --sheet-ids 0 1 45 46 90 91 --sheet-out sheet.pdf
+
+The sheet grid shape is configurable with ``--sheet-cols``/``--sheet-rows``
+(page capacity = cols * rows ids, new page started every cols * rows ids).
+For example, a 1 column x 2 row per page layout with explicit tile
+centers::
+
+    python3 generate_stag_markers.py --sheet a4 --marker-size-mm 93.0 \\
+        --sheet-cols 1 --sheet-rows 2 \\
+        --centers-x-mm 105 --centers-y-mm 74.25 222.75 \\
         --sheet-ids 0 1 45 46 90 91 --sheet-out sheet.pdf
 """
 
@@ -417,12 +428,11 @@ MM_PER_INCH = 25.4
 
 PAGE_SIZES_MM = {
     "a4": (210.0, 297.0),
-    "us-letter": (215.9, 279.4),
 }
 
-SHEET_COLS = 2
-SHEET_ROWS = 3
-SHEET_PER_PAGE = SHEET_COLS * SHEET_ROWS
+# Default sheet grid shape (used when --sheet-cols/--sheet-rows are not given).
+SHEET_COLS_DEFAULT = 2
+SHEET_ROWS_DEFAULT = 3
 
 
 def _mm_to_px(mm, dpi):
@@ -441,23 +451,36 @@ def _default_centers(page_w_mm, page_h_mm, tile_mm, cols, rows):
 def build_sheet_pages(ids, marker_size_mm, page_w_mm, page_h_mm, dpi,
                        centers_x_mm=None, centers_y_mm=None,
                        codebook_dir=DEFAULT_CODEBOOK_DIR, hd=11,
-                       font_path=DEFAULT_FONT):
+                       font_path=DEFAULT_FONT,
+                       sheet_cols=SHEET_COLS_DEFAULT, sheet_rows=SHEET_ROWS_DEFAULT):
     """Render `ids` (a flat list where the string "-" means "leave this
-    slot blank") onto one or more sheet pages, 2 columns x 3 rows per
-    page (row-major), a new page started every 6 ids. Returns a list of
-    PIL Images, one per page."""
+    slot blank") onto one or more sheet pages, `sheet_cols` columns x
+    `sheet_rows` rows per page (row-major), a new page started every
+    ``sheet_cols * sheet_rows`` ids. Returns a list of PIL Images, one per
+    page."""
     codes = load_codebook(codebook_dir, hd)
     total_count = len(codes)
+
+    per_page = sheet_cols * sheet_rows
 
     tile_mm = marker_size_mm * (1 + 2 * BORDER_RATIO)  # full tile incl. white margin
     tile_px = _mm_to_px(tile_mm, dpi)
 
+    # Sanity-check that the white margin ratio (12.5% of the black square,
+    # each side) survives the mm -> px rounding used for the sheet tile.
+    marker_px = _mm_to_px(marker_size_mm, dpi)
+    border_px = (tile_px - marker_px) / 2.0
+    if abs(border_px / marker_px - BORDER_RATIO) > 0.01:
+        raise AssertionError(
+            "sheet tile white margin ratio drifted: expected {:.4f}, got {:.4f}".format(
+                BORDER_RATIO, border_px / marker_px))
+
     if centers_x_mm is None:
-        centers_x_mm, centers_y_mm = _default_centers(page_w_mm, page_h_mm, tile_mm, SHEET_COLS, SHEET_ROWS)
-    if len(centers_x_mm) != SHEET_COLS:
-        raise ValueError("expected {} x-centers, got {}".format(SHEET_COLS, len(centers_x_mm)))
-    if len(centers_y_mm) != SHEET_ROWS:
-        raise ValueError("expected {} y-centers, got {}".format(SHEET_ROWS, len(centers_y_mm)))
+        centers_x_mm, centers_y_mm = _default_centers(page_w_mm, page_h_mm, tile_mm, sheet_cols, sheet_rows)
+    if len(centers_x_mm) != sheet_cols:
+        raise ValueError("expected {} x-centers, got {}".format(sheet_cols, len(centers_x_mm)))
+    if len(centers_y_mm) != sheet_rows:
+        raise ValueError("expected {} y-centers, got {}".format(sheet_rows, len(centers_y_mm)))
 
     page_w_px = _mm_to_px(page_w_mm, dpi)
     page_h_px = _mm_to_px(page_h_mm, dpi)
@@ -469,20 +492,31 @@ def build_sheet_pages(ids, marker_size_mm, page_w_mm, page_h_mm, dpi,
         if marker_id not in cache:
             bits = codes[marker_id]
             img = render_marker(bits, hd, total_count, marker_id, font_path=font_path)
-            tile = cv2.resize(img, (tile_px, tile_px), interpolation=cv2.INTER_AREA)
+            # The base render is FILE_SIZE (1000px) square; resample to the
+            # physical tile size. Shrinking (smaller sheets/lower DPI) wants
+            # an area-average to avoid aliasing, while enlarging (e.g. large
+            # markers at 300 DPI) wants a smooth upscale instead of the
+            # blocky/aliased result INTER_AREA gives when upsampling.
+            if tile_px < FILE_SIZE:
+                interp = cv2.INTER_AREA
+            elif tile_px > FILE_SIZE:
+                interp = cv2.INTER_CUBIC
+            else:
+                interp = cv2.INTER_AREA
+            tile = cv2.resize(img, (tile_px, tile_px), interpolation=interp)
             cache[marker_id] = tile
         return cache[marker_id]
 
     pages = []
-    for page_start in range(0, len(ids), SHEET_PER_PAGE):
-        page_ids = ids[page_start:page_start + SHEET_PER_PAGE]
-        page_ids = page_ids + ["-"] * (SHEET_PER_PAGE - len(page_ids))
+    for page_start in range(0, len(ids), per_page):
+        page_ids = ids[page_start:page_start + per_page]
+        page_ids = page_ids + ["-"] * (per_page - len(page_ids))
 
         page = np.full((page_h_px, page_w_px), 255, dtype=np.uint8)
         for slot, marker_id in enumerate(page_ids):
             if marker_id in ("-", None):
                 continue
-            row, col = divmod(slot, SHEET_COLS)
+            row, col = divmod(slot, sheet_cols)
             tile = get_tile(int(marker_id))
             cx_px = _mm_to_px(centers_x_mm[col], dpi)
             cy_px = _mm_to_px(centers_y_mm[row], dpi)
@@ -539,26 +573,41 @@ def main(argv=None):
     p.add_argument("--sheet", choices=sorted(PAGE_SIZES_MM), help="build a multi-marker print PDF for this page size")
     p.add_argument("--marker-size-mm", type=float, help="black square edge length, in mm (sheet mode)")
     p.add_argument("--sheet-ids", nargs="+", metavar="ID",
-                    help="ids to lay out row-major, 2 cols x 3 rows per page, new page every 6 "
-                         "('-' leaves a slot blank)")
+                    help="ids to lay out row-major, --sheet-cols x --sheet-rows per page, new page "
+                         "every (cols * rows) ids ('-' leaves a slot blank)")
     p.add_argument("--sheet-out", metavar="FILE", help="output PDF path (sheet mode)")
     p.add_argument("--dpi", type=float, default=300.0, help="sheet render DPI (default: %(default)s)")
-    p.add_argument("--centers-x-mm", nargs=SHEET_COLS, type=float, metavar="X",
-                    help="explicit tile-center x positions in mm, one per column (default: evenly spaced)")
-    p.add_argument("--centers-y-mm", nargs=SHEET_ROWS, type=float, metavar="Y",
-                    help="explicit tile-center y positions in mm, one per row (default: evenly spaced)")
+    p.add_argument("--sheet-cols", type=int, default=SHEET_COLS_DEFAULT,
+                    help="sheet grid columns per page (default: %(default)s)")
+    p.add_argument("--sheet-rows", type=int, default=SHEET_ROWS_DEFAULT,
+                    help="sheet grid rows per page (default: %(default)s)")
+    p.add_argument("--centers-x-mm", nargs="+", type=float, metavar="X",
+                    help="explicit tile-center x positions in mm, one per column, "
+                         "i.e. --sheet-cols values (default: evenly spaced)")
+    p.add_argument("--centers-y-mm", nargs="+", type=float, metavar="Y",
+                    help="explicit tile-center y positions in mm, one per row, "
+                         "i.e. --sheet-rows values (default: evenly spaced)")
 
     args = p.parse_args(argv)
 
     if args.sheet:
         if not args.marker_size_mm or not args.sheet_ids or not args.sheet_out:
             p.error("--sheet requires --marker-size-mm, --sheet-ids and --sheet-out")
+        if args.sheet_cols < 1 or args.sheet_rows < 1:
+            p.error("--sheet-cols/--sheet-rows must be >= 1")
+        if args.centers_x_mm is not None and len(args.centers_x_mm) != args.sheet_cols:
+            p.error("--centers-x-mm expects {} value(s) (one per --sheet-cols), got {}".format(
+                args.sheet_cols, len(args.centers_x_mm)))
+        if args.centers_y_mm is not None and len(args.centers_y_mm) != args.sheet_rows:
+            p.error("--centers-y-mm expects {} value(s) (one per --sheet-rows), got {}".format(
+                args.sheet_rows, len(args.centers_y_mm)))
         page_w_mm, page_h_mm = PAGE_SIZES_MM[args.sheet]
         ids = _parse_ids_arg(args.sheet_ids)
         pages = build_sheet_pages(
             ids, args.marker_size_mm, page_w_mm, page_h_mm, args.dpi,
             centers_x_mm=args.centers_x_mm, centers_y_mm=args.centers_y_mm,
-            codebook_dir=args.codebook_dir, hd=args.hd, font_path=args.font)
+            codebook_dir=args.codebook_dir, hd=args.hd, font_path=args.font,
+            sheet_cols=args.sheet_cols, sheet_rows=args.sheet_rows)
         save_pdf(pages, args.sheet_out, args.dpi)
         print("wrote {} page(s) to {}".format(len(pages), args.sheet_out))
         return 0

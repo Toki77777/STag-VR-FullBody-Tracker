@@ -24,7 +24,7 @@ This version uses STag, a stable, occlusion-resistant fiducial marker system, an
 
 ### Printing markers
 
-The [images-to-print](images-to-print) folder contains ready-to-print A4 and US-letter sheets of STag (HD11) markers, sized and positioned for the default tracker setup. If you need more markers, or markers of a different size, you can generate your own with [utilities/generate_stag_markers.py](utilities/generate_stag_markers.py) (requires Python with numpy, opencv-python and pillow installed).
+The [images-to-print](images-to-print) folder contains ready-to-print A4 sheets of STag (HD11) markers, 93 mm (black square edge), sized and positioned for the default tracker setup. Each page holds one tracker's front or back marker pair, so print one front page and one back page per tracker (the front and back sheets for a given tracker carry different marker ids of that same tracker). If you need more markers, or markers of a different size, you can generate your own with [utilities/generate_stag_markers.py](utilities/generate_stag_markers.py) (requires Python with numpy, opencv-python and pillow installed).
 
 If you have any issues or encounter any bugs, feel free to open an issue on github or message me on discord: https://discord.gg/g2ctkXB4bb
 

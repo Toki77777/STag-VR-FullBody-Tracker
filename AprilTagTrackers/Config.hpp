@@ -43,7 +43,7 @@ public:
     ATT_SERIAL_COMMENT("en, ja, ru, zh-cn");
     REFLECTABLE_FIELD(std::string, langCode) = "en";
     REFLECTABLE_FIELD(int, trackerNum) = 3;
-    REFLECTABLE_FIELD(cfg::Validated<double>, markerSize){5.0, cfg::GreaterEqual(0.01)};
+    REFLECTABLE_FIELD(cfg::Validated<double>, markerSize){9.3, cfg::GreaterEqual(0.01)};
     REFLECTABLE_FIELD(int, numOfPrevValues) = 5;
     REFLECTABLE_FIELD(bool, usePredictive) = true;
     REFLECTABLE_FIELD(bool, ignoreTracker0) = false;
