@@ -1,10 +1,10 @@
 #include "Tracker.hpp"
 
-#include "AprilTagWrapper.hpp"
 #include "config/TrackerUnit.hpp"
 #include "Helpers.hpp"
 #include "ImageDrawing.hpp"
 #include "math/CVHelpers.hpp"
+#include "StagWrapper.hpp"
 #include "tracker/MainLoopRunner.hpp"
 #include "tracker/TrackerUnit.hpp"
 #include "utils/Assert.hpp"
@@ -662,7 +662,7 @@ void Tracker::CalibrateTracker()
     // initialize all parameters needed for tracker calibration
     std::vector<tracker::TrackerUnit> trackerUnits;
 
-    AprilTagWrapper april{AprilTagWrapper::ConvertFamily(user_config.markerLibrary), user_config.videoStreams[0]->quadDecimate, user_config.detectorThreads};
+    StagWrapper stagDetector{StagWrapper::ConvertLibrary(user_config.markerLibrary), user_config.videoStreams[0]->quadDecimate};
     MarkerDetectionList dets{};
 
     const Index trackerNum = user_config.trackerNum;
@@ -698,12 +698,8 @@ void Tracker::CalibrateTracker()
     const auto doStep = [&] {
         mCameraFrame.Get(frame);
         // detect and draw all markers on image
-        AprilTagWrapper::ConvertGrayscale(frame.image, grayImage);
-        april.DetectMarkers(grayImage, dets);
-        if (showTimeProfile)
-        {
-            april.DrawTimeProfile(frame.image, cv::Point(10, 60));
-        }
+        StagWrapper::ConvertGrayscale(frame.image, grayImage);
+        stagDetector.DetectMarkers(grayImage, dets);
         // draw all markers blue. We will overwrite this with other colors for markers that are part of any of the trackers that we use
         cv::aruco::drawDetectedMarkers(frame.image, dets.corners, dets.ids, COLOR_MARKER_DETECTED);
 

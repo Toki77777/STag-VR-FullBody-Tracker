@@ -75,13 +75,13 @@ PARAMS_TRACKER: TRACKER PARAMETERS
 PARAMS_TRACKER_NAME_NUM_TRACKERS: Number of trackers
 PARAMS_TRACKER_TOOLTIP_NUM_TRACKERS: "Set to 3 for full body. 2 will not work in vrchat!"
 PARAMS_TRACKER_NAME_MARKER_SIZE: Size of markers in cm
-PARAMS_TRACKER_TOOLTIP_MARKER_SIZE: Measure the white square on markers and input it here
-PARAMS_TRACKER_NAME_QUAD_DECIMATE: Quad decimate
-PARAMS_TRACKER_TOOLTIP_QUAD_DECIMATE: "Can be 1, 1.5, 2, 3, 4. Higher values will increase FPS, but reduce maximum range of detections"
+PARAMS_TRACKER_TOOLTIP_MARKER_SIZE: Measure the black square on markers and input it here
+PARAMS_TRACKER_NAME_QUAD_DECIMATE: Detection downscale
+PARAMS_TRACKER_TOOLTIP_QUAD_DECIMATE: "Can be 1, 1.5, 2, 3, 4. Detection runs on a downscaled image: higher values will increase FPS, but reduce maximum range of detections"
 PARAMS_TRACKER_NAME_SEARCH_WINDOW: Search window
 PARAMS_TRACKER_TOOLTIP_SEARCH_WINDOW: "Size of the search window. Smaller window will speed up detection, but having it too small will cause detection to fail if tracker moves too far in one frame."
 PARAMS_TRACKER_NAME_MARKER_LIBRARY: Marker library
-PARAMS_TRACKER_TOOLTIP_MARKER_LIBRARY: "Marker library to use. Leave at ApriltagStandard unless you know what you are doing."
+PARAMS_TRACKER_TOOLTIP_MARKER_LIBRARY: "Marker library to use. Leave at STag HD11 unless you know what you are doing."
 PARAMS_TRACKER_NAME_USE_CENTERS: Use centers of trackers
 PARAMS_TRACKER_TOOLTIP_USE_CENTERS: "Experimental. Instead of having position of tracker detected at the main marker, it will be the center of all markers in the tracker."
 PARAMS_TRACKER_NAME_IGNORE_0: Ignore tracker 0
@@ -114,7 +114,7 @@ TRACKER_CAMERA_CALIBRATION_INSTRUCTIONS: "Camera calibration started!\n\nPlace t
 TRACKER_CAMERA_CALIBRATION_COMPLETE: "Calibration complete."
 TRACKER_CAMERA_CALIBRATION_NOTDONE: "Calibration has not been completed as too few images have been taken."
 TRACKER_CAMERA_NOTCALIBRATED: Camera not calibrated
-TRACKER_TRACKER_CALIBRATION_INSTRUCTIONS: "Tracker calibration started!\n\nBefore calibrating, set the number of trackers and marker size parameters (measure the white square). Make sure the trackers are completely rigid and cannot bend,\nneither the markers or at the connections between markers - use images on github for reference. Wear your trackers, then calibrate them by moving them to the camera closer than 30cm.\n\nGreen: This marker is calibrated and can be used to calibrate other markers.\nBlue: This marker is not part of any used trackers. You probably have to increase number of trackers in params.\nPurple: This marker is too far from the camera to be calibrated. Move it closer than 30cm.\nRed: This marker cannot be calibrated as no green markers are seen. Rotate the tracker until a green marker is seen along this one.\nYellow: The marker is being calibrated. Hold it still for a second.\n\nWhen all the markers on all trackers are shown as green, press OK to finish calibration."
+TRACKER_TRACKER_CALIBRATION_INSTRUCTIONS: "Tracker calibration started!\n\nBefore calibrating, set the number of trackers and marker size parameters (measure the black square). Make sure the trackers are completely rigid and cannot bend,\nneither the markers or at the connections between markers - use images on github for reference. Wear your trackers, then calibrate them by moving them to the camera closer than 30cm.\n\nGreen: This marker is calibrated and can be used to calibrate other markers.\nBlue: This marker is not part of any used trackers. You probably have to increase number of trackers in params.\nPurple: This marker is too far from the camera to be calibrated. Move it closer than 30cm.\nRed: This marker cannot be calibrated as no green markers are seen. Rotate the tracker until a green marker is seen along this one.\nYellow: The marker is being calibrated. Hold it still for a second.\n\nWhen all the markers on all trackers are shown as green, press OK to finish calibration."
 TRACKER_TRACKER_NOTCALIBRATED: Trackers not calibrated
 TRACKER_STEAMVR_NOTCONNECTED: Not connected to SteamVR
 TRACKER_CALIBRATION_SOMETHINGWRONG: "Something went wrong. Try again."

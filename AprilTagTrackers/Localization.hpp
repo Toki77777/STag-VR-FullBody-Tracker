@@ -18,12 +18,14 @@ class Localization : public serial::Serializable<Localization>
 public:
     // Keep synced, alphabetical order, from this list
     // https://www.andiamo.co.uk/resources/iso-language-codes/
-    static constexpr std::array<std::string_view, 3> LANG_CODE_MAP{
+    static constexpr std::array<std::string_view, 4> LANG_CODE_MAP{
         "en",
+        "ja",
         "ru",
         "zh-cn"};
     static constexpr std::array<U8StringView, LANG_CODE_MAP.size()> LANG_NAME_MAP{
         "English",
+        "Japanese",
         "Russian",
         "Chinese (PRC)"};
 
@@ -170,13 +172,13 @@ Uncheck Calibration mode when done!)";
     T(PARAMS_TRACKER_NAME_NUM_TRACKERS) = "Number of trackers";
     T(PARAMS_TRACKER_TOOLTIP_NUM_TRACKERS) = "Set to 3 for full body. 2 will not work in vrchat!";
     T(PARAMS_TRACKER_NAME_MARKER_SIZE) = "Size of markers in cm";
-    T(PARAMS_TRACKER_TOOLTIP_MARKER_SIZE) = "Measure the white square on markers and input it here";
-    T(PARAMS_TRACKER_NAME_QUAD_DECIMATE) = "Quad decimate";
-    T(PARAMS_TRACKER_TOOLTIP_QUAD_DECIMATE) = "Can be 1, 1.5, 2, 3, 4. Higher values will increase FPS, but reduce maximum range of detections";
+    T(PARAMS_TRACKER_TOOLTIP_MARKER_SIZE) = "Measure the black square on markers and input it here";
+    T(PARAMS_TRACKER_NAME_QUAD_DECIMATE) = "Detection downscale";
+    T(PARAMS_TRACKER_TOOLTIP_QUAD_DECIMATE) = "Can be 1, 1.5, 2, 3, 4. Detection runs on a downscaled image: higher values will increase FPS, but reduce maximum range of detections";
     T(PARAMS_TRACKER_NAME_SEARCH_WINDOW) = "Search window";
     T(PARAMS_TRACKER_TOOLTIP_SEARCH_WINDOW) = "Size of the search window. Smaller window will speed up detection, but having it too small will cause detection to fail if tracker moves too far in one frame.";
     T(PARAMS_TRACKER_NAME_MARKER_LIBRARY) = "Marker library";
-    T(PARAMS_TRACKER_TOOLTIP_MARKER_LIBRARY) = "Marker library to use. Leave at ApriltagStandard unless you know what you are doing.";
+    T(PARAMS_TRACKER_TOOLTIP_MARKER_LIBRARY) = "Marker library to use. Leave at STag HD11 unless you know what you are doing.";
     T(PARAMS_TRACKER_NAME_USE_CENTERS) = "Use centers of trackers";
     T(PARAMS_TRACKER_TOOLTIP_USE_CENTERS) = "Experimental. Instead of having position of tracker detected at the main marker, it will be the center of all markers in the tracker.";
     T(PARAMS_TRACKER_NAME_IGNORE_0) = "Ignore tracker 0";
@@ -240,7 +242,7 @@ Press OK to save calibration when done.)";
     T(TRACKER_TRACKER_CALIBRATION_INSTRUCTIONS) =
         R"(Tracker calibration started!
 
-Before calibrating, set the number of trackers and marker size parameters (measure the white square). Make sure the trackers are completely rigid and cannot bend,
+Before calibrating, set the number of trackers and marker size parameters (measure the black square). Make sure the trackers are completely rigid and cannot bend,
 neither the markers or at the connections between markers - use images on github for reference. Wear your trackers, then calibrate them by moving them to the camera closer than 30cm.
 
 Green: This marker is calibrated and can be used to calibrate other markers.

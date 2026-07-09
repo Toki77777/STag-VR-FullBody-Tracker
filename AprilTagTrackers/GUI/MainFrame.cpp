@@ -294,8 +294,8 @@ void GUI::MainFrame::CreateParamsPage(RefPtr<wxNotebook> pages)
     auto boxSizer = NewSizer<wxBoxSizer>(panel, wxVERTICAL);
     params = FormBuilder{panel, boxSizer};
 
-    static constexpr std::array<U8StringView, 5> markerLibraries =
-        {"AprilTag Standard", "AprilTag Circular", "Aruco4x4", "AprilTag Color", "ApriltagCustom29h10"};
+    static constexpr std::array<U8StringView, 7> markerLibraries =
+        {"STag HD11", "STag HD13", "STag HD15", "STag HD17", "STag HD19", "STag HD21", "STag HD23"};
 
     static constexpr std::array<U8StringView, 4> camRotOptions =
         {"0", "90", "180", "270"};
@@ -413,9 +413,9 @@ void GUI::MainFrame::CreateLicensePage(RefPtr<wxNotebook> pages)
     auto ourLicense = NewWindow<wxTextCtrl>(nb, wxID_ANY, std::string(ATT_LICENSE), wxDefaultPosition,
         wxDefaultSize, wxTE_MULTILINE | wxTE_READONLY);
     nb->AddPage(ourLicense, "AprilTagTrackers", true);
-    auto aprilLicense = NewWindow<wxTextCtrl>(nb, wxID_ANY, std::string(APRILTAG_LICENSE),
+    auto stagLicense = NewWindow<wxTextCtrl>(nb, wxID_ANY, std::string(STAG_LICENSE),
         wxDefaultPosition, wxDefaultSize, wxTE_MULTILINE | wxTE_READONLY);
-    nb->AddPage(aprilLicense, "AprilTag");
+    nb->AddPage(stagLicense, "STag");
     auto cvLicense = NewWindow<wxTextCtrl>(nb, wxID_ANY, std::string(OPENCV_LICENSE), wxDefaultPosition,
         wxDefaultSize, wxTE_MULTILINE | wxTE_READONLY);
     nb->AddPage(cvLicense, "OpenCV");

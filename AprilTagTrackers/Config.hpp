@@ -40,10 +40,10 @@ public:
     REFLECTABLE_BEGIN;
     REFLECTABLE_FIELD(std::string, windowTitle);
     // Keep synced with Localization::LANG_CODE_MAP
-    ATT_SERIAL_COMMENT("en, ru, zh-cn");
+    ATT_SERIAL_COMMENT("en, ja, ru, zh-cn");
     REFLECTABLE_FIELD(std::string, langCode) = "en";
     REFLECTABLE_FIELD(int, trackerNum) = 3;
-    REFLECTABLE_FIELD(cfg::Validated<double>, markerSize){5.0, cfg::GreaterEqual(0.01)};
+    REFLECTABLE_FIELD(cfg::Validated<double>, markerSize){9.3, cfg::GreaterEqual(0.01)};
     REFLECTABLE_FIELD(int, numOfPrevValues) = 5;
     REFLECTABLE_FIELD(bool, usePredictive) = true;
     REFLECTABLE_FIELD(bool, ignoreTracker0) = false;
@@ -58,14 +58,13 @@ public:
     REFLECTABLE_FIELD(bool, trackerCalibCenters) = false;
     REFLECTABLE_FIELD(cfg::Validated<double>, depthSmoothing){0, cfg::Clamp(0.0, 1.0)};
     REFLECTABLE_FIELD(float, additionalSmoothing) = 0;
+    ATT_SERIAL_COMMENT("STag marker library: 0=HD11, 1=HD13, 2=HD15, 3=HD17, 4=HD19, 5=HD21, 6=HD23");
     REFLECTABLE_FIELD(int, markerLibrary) = 0;
     /// TODO: if (value <= 0) value = 45;
     REFLECTABLE_FIELD(cfg::Validated<int>, markersPerTracker){45, cfg::GreaterEqual(1)};
     REFLECTABLE_FIELD(bool, disableOpenVrApi) = false;
-    REFLECTABLE_FIELD(cfg::Validated<int>, apriltagThreadCount){4, cfg::Clamp(1, 32)};
     REFLECTABLE_FIELD(cfg::List<cfg::VideoStream>, videoStreams){1};
     REFLECTABLE_FIELD(cfg::List<cfg::TrackerUnit>, trackers){3};
-    REFLECTABLE_FIELD(cfg::Validated<int>, detectorThreads){4, cfg::GreaterEqual(1)};
     REFLECTABLE_END;
 
     CalibrationConfig calib{};

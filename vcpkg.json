@@ -27,7 +27,7 @@
             "default-features": false
         },
         "libusb",
-        "apriltag",
+        "stag",
         "openvr",
         "doctest",
         "taskflow"

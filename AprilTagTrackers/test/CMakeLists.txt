@@ -35,7 +35,7 @@ target_link_libraries(test PRIVATE
     Threads::Threads
     ${OpenCV_LIBRARIES}
     ${LIBUSB_LIBRARIES}
-    apriltag::apriltag
+    stag::stag
     openvr::openvr_api
     doctest::doctest
     Taskflow::Taskflow
