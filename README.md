@@ -1,16 +1,4 @@
-## This guide is also available in the following languages:
-
-- [汉语 (Simplified Chinese)](/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87%E6%95%99%E7%A8%8B%EF%BC%88SimplifiedChineseTutorial%EF%BC%89.md)
-
-## [>>Full Tutorial Here<<](https://github.com/ju1ce/April-Tag-VR-FullBody-Tracker/wiki)
-
-For the full setup guide, click on the link above to access the wiki!
-
-## Having questions or issues?
-
-Ask in the help channel of our discord server: https://discord.gg/g2ctkXB4bb
-
-# April-Tag-VR-FullBody-Tracker
+# STag-VR-FullBody-Tracker
 
 Full-body tracking in VR using STag markers.
 
@@ -28,29 +16,16 @@ The [images-to-print](images-to-print) folder contains ready-to-print A4 sheets 
 
 If you have any issues or encounter any bugs, feel free to open an issue on github or message me on discord: https://discord.gg/g2ctkXB4bb
 
-The program can be downloaded from the [releases](https://github.com/ju1ce/April-Tag-VR-FullBody-Tracker/releases) tab.
+The program can be downloaded from the [releases](https://github.com/Toki77777/STag-VR-FullBody-Tracker/releases) tab.
 
 ![demo](images/demo.gif)
 
-Beatsaber demo: https://youtu.be/Akps-dH0EeA
-
 ### Short setup video:
-I am too bad at making actual tutorials, but I did record a short video of me setting up everything. It's not a replacement for the tutorial below, but it may help you understand some of the steps better.
-
-https://youtu.be/ncN8Vw_0DrE
-
-### I also have a ko-fi!
-
-https://ko-fi.com/ju1ce
-
-Donations are apreciated but not necessary!
+Coming soon
 
 ## Build instructions:
 
-**NOTE: THIS IS ONLY FOR DEVELOPERS. IF YOU ONLY WANT TO USE APRILTAGTRACKERS AND NOT WRITE CODE, THE TUTORIAL IS ON THE [WIKI](https://github.com/ju1ce/April-Tag-VR-FullBody-Tracker/wiki)**
-
-**NOTE 2: Building in the current master is a bit broken right now. If you have problems building, refer to this [PR](https://github.com/ju1ce/April-Tag-VR-FullBody-Tracker/pull/146).**
-**The repo with the fixes is [here](https://github.com/Skyrion9/April-Tag-VR-FullBody-Tracker), with a more detailed build manual [here](https://github.com/Skyrion9/April-Tag-VR-FullBody-Tracker/blob/master/WindowsBuild_Simple.md).**
+**NOTE: THIS IS ONLY FOR DEVELOPERS. IF YOU ONLY WANT TO USE APRILTAGTRACKERS AND NOT WRITE CODE, THE TUTORIAL IS ON THE [WIKI](https://github.com/Toki77777/STag-VR-FullBody-Tracker/wiki)**
 
 The project is a CMake project. You should be able to build it either using CMake and your favourite IDE/compiler, or some IDEs already support opening cmake projects directly.
 
@@ -71,7 +46,7 @@ Open in Visual Studio, or use the Visual Studio Command Prompt.
 
 ### Clone and build
 ```
-git clone https://github.com/ju1ce/April-Tag-VR-FullBody-Tracker
+git clone https://github.com/Toki77777/STag-VR-FullBody-Tracker
 cd April-Tag-VR-FullBody-Tracker
 cmake -B build
 cmake --build build --config Release --target install
