@@ -15,10 +15,6 @@
                 "ffmpeg",
                 "fs",
                 {
-                    "name": "gstreamer",
-                    "platform": "linux"
-                },
-                {
                     "name": "gtk",
                     "platform": "linux"
                 },
@@ -30,11 +26,14 @@
                     "name": "msmf",
                     "platform": "windows"
                 },
-                "opengl",
                 "thread",
                 {
                     "name": "v4l",
                     "platform": "linux"
+                },
+                {
+                    "name": "win32ui",
+                    "platform": "windows"
                 }
             ]
         },
