@@ -9,6 +9,8 @@
 #include "VideoCapture.hpp"
 #include "VRDriver.hpp"
 
+#include <opencv2/objdetect/aruco_detector.hpp>
+
 namespace tracker
 {
 
@@ -80,7 +82,7 @@ public:
             auto& unit = (*trackerUnits)[i];
             auto [pose, isValid] = mVRDriver->GetTracker(i, -frameTimeBeforeDetect - videoStream->latency);
 
-            if(isValid)
+            if (isValid)
                 pose = mPlayspace->InvTransformFromOVR(pose);
 
             std::array<cv::Point2d, 2> projected;

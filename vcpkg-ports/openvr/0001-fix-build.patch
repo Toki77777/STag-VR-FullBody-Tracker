@@ -1,14 +1,7 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 8956cda..30df300 100644
+index e0d549a..c74611f 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -1,5 +1,5 @@
- # Set the minimum required version of CMake for this project.
--cmake_minimum_required(VERSION 2.8)
-+cmake_minimum_required(VERSION 3.0)
- 
- # Set project name.
- project(OpenVRSDK)
 @@ -22,7 +22,7 @@ string(REGEX REPLACE "${VERSION_BUILD_REGEX}" "\\1" VERSION_BUILD ${VERSION_BUIL
  set(OPENVR_VERSION "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_BUILD}")
  
@@ -18,7 +11,7 @@ index 8956cda..30df300 100644
  option(BUILD_FRAMEWORK "Builds the library as an apple Framework" OFF)
  option(BUILD_UNIVERSAL "Builds the shared or framework as a universal (fat, 32- & 64-bit) binary" ON)
  option(BUILD_OSX_I386 "Builds the shared or framework as a 32-bit binary, even on a 64-bit platform" OFF)
-@@ -68,9 +68,6 @@ elseif(APPLE)
+@@ -70,9 +70,6 @@ elseif(APPLE)
  endif()
  
  # Set output folder for static and shared libraries
@@ -29,10 +22,18 @@ index 8956cda..30df300 100644
  # Enable some properties.
  if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 29b69c5..ffdb312 100644
+index b83710a..927e319 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -92,25 +92,41 @@ elseif(BUILD_FRAMEWORK)
+@@ -18,7 +18,6 @@ if(APPLE)
+ elseif(WIN32)
+   if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+     add_definitions( -DWIN64 )
+-    set( LIBNAME "openvr_api64" )
+   endif()
+ endif()
+ 
+@@ -94,25 +93,42 @@ elseif(BUILD_FRAMEWORK)
  	)
  else()
  	add_library(${LIBNAME} STATIC ${SOURCE_FILES})
@@ -40,6 +41,7 @@ index 29b69c5..ffdb312 100644
  endif()
  
 +set_target_properties(${LIBNAME} PROPERTIES DEBUG_POSTFIX "d")
++
  if(USE_CUSTOM_LIBCXX)
  	set(EXTRA_LIBS ${EXTRA_LIBS} c++ c++abi)
  endif()
@@ -82,11 +84,11 @@ index 29b69c5..ffdb312 100644
 +install(FILES "${CMAKE_CURRENT_BINARY_DIR}/openvrConfig.cmake" DESTINATION "share/openvr")
 diff --git a/src/openvrConfig.cmake.in b/src/openvrConfig.cmake.in
 new file mode 100644
-index 0000000..ab71c6e
+index 0000000..f87dd8f
 --- /dev/null
 +++ b/src/openvrConfig.cmake.in
 @@ -0,0 +1,6 @@
-+set(openvr_VERSION 1.16.8)
++set(openvr_VERSION 2.15.6)
 +
 +@PACKAGE_INIT@
 +

@@ -2,12 +2,13 @@
 
 #include "utils/StrongType.hpp"
 
-#include <opencv2/aruco.hpp>
 #include <opencv2/core/affine.hpp>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/matx.hpp>
 #include <opencv2/core/quaternion.hpp>
 #include <opencv2/core/types.hpp>
+#include <opencv2/objdetect/aruco_board.hpp>
+#include <opencv2/objdetect/aruco_dictionary.hpp>
 
 #include <vector>
 
@@ -32,6 +33,7 @@ template <typename T, int N>
 using CPoint = typename detail::CPoint<T, N>::Type;
 
 using RodriguesVec3d = utils::StrongType<cv::Vec3d, struct RodriguesVecTag_>;
+/// cv::aruco::Board is immutable since OpenCV 4.7, a null pointer represents a board without markers
 using ArucoBoardSharedPtr = cv::Ptr<cv::aruco::Board>;
 /// 4 corners of marker in cw order, output from StagWrapper
 using MarkerCorners2f = std::vector<cv::Point2f>;

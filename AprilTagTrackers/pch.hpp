@@ -1,13 +1,13 @@
 #pragma once
 
 // OpenCV
-#include <opencv2/aruco.hpp>
 #include <opencv2/calib3d.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/core/affine.hpp>
 #include <opencv2/core/persistence.hpp>
 #include <opencv2/core/quaternion.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/objdetect/aruco_detector.hpp>
 #include <opencv2/videoio.hpp>
 #include <opencv2/videoio/registry.hpp>
 
