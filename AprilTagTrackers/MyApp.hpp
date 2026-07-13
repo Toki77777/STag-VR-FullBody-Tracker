@@ -26,9 +26,7 @@ public:
     int OnExit() override;
     bool OnInit() override;
 
-#ifdef ATT_DEBUG
     void OnFatalException() override;
     void OnUnhandledException() override;
     bool OnExceptionInMainLoop() override;
-#endif
 };

@@ -4,14 +4,24 @@
 #include "config/TrackerUnit.hpp"
 #include "Helpers.hpp"
 #include "IPC/IPC.hpp"
+#include "SemVer.h"
 #include "utils/Enum.hpp"
 
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string_view>
 
 namespace tracker
 {
+
+class DriverVersionMismatch : public std::runtime_error
+{
+public:
+    DriverVersionMismatch(SemVer found, SemVer expected);
+    SemVer found;
+    SemVer expected;
+};
 
 class VRDriver
 {

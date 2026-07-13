@@ -50,6 +50,25 @@ cmake -B build
 cmake --build build --config Release --target install
 ```
 
+## SteamVR ドライバのインストール
+
+ビルドまたはリリース zip の展開が完了したら、以下の手順で SteamVR にドライバを登録してください。
+
+- あらかじめ SteamVR を一度起動しておいてください（`%localappdata%\openvr\openvrpaths.vrpath` が生成されている必要があります）。
+- `install`（またはリリース zip の展開先）内の `driver_files` フォルダに移動し、そこにある
+  ```
+  driver_files\install_driver.bat
+  ```
+  を実行します。このバッチファイルはカレントディレクトリを基準に隣の `apriltagtrackers` フォルダを解決するため、必ず `driver_files` フォルダ内から（ダブルクリックするか、そのフォルダをカレントディレクトリにして）実行してください。
+- スクリプトはドライバの登録に加えて、SteamVR 設定の `activateMultipleDrivers` を true に設定します。
+- アンインストールする場合は、同じ `driver_files` フォルダ内の
+  ```
+  driver_files\uninstall_driver.bat
+  ```
+  を実行してください。
+
+補足: 旧バージョンに存在した Python 製インストーラ `install_driver.exe` は廃止されました。古い手順に従って `install_driver.exe` を実行し「'apriltagtrackers' folder not found」と表示された場合は、代わりに上記の `install_driver.bat` を使用してください。
+
 ### トラブルシューティング
 
 ビルド時に何か問題が発生した場合は、GitHub issue でお知らせください！

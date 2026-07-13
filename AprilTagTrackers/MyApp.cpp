@@ -4,6 +4,10 @@
 #include "utils/Log.hpp"
 
 #include <opencv2/core/utils/logger.hpp>
+#include <wx/msgdlg.h>
+
+#include <exception>
+#include <string>
 
 wxIMPLEMENT_APP(MyApp); // NOLINT
 
@@ -104,5 +108,45 @@ static inline const bool overrideErrorHandlers = []
     wxSetAssertHandler(&wxWidgetsAssertHandler);
     return true;
 }();
+
+#else
+
+bool MyApp::OnExceptionInMainLoop()
+{
+    try
+    {
+        throw;
+    }
+    catch (const std::exception& e)
+    {
+        ATT_LOG_ERROR("unhandled exception in main loop: ", e.what());
+        wxMessageBox(wxString::FromUTF8(std::string("An unexpected error occurred:\n") + e.what()), "AprilTagTrackers", wxOK | wxICON_ERROR);
+        return true; // keep the app running
+    }
+    catch (...)
+    {
+        ATT_LOG_ERROR("unhandled non-std exception in main loop");
+        return false;
+    }
+}
+void MyApp::OnUnhandledException()
+{
+    try
+    {
+        throw;
+    }
+    catch (const std::exception& e)
+    {
+        ATT_LOG_ERROR("unhandled exception: ", e.what());
+    }
+    catch (...)
+    {
+        ATT_LOG_ERROR("unhandled non-std exception");
+    }
+}
+void MyApp::OnFatalException()
+{
+    ATT_LOG_ERROR("fatal exception");
+}
 
 #endif

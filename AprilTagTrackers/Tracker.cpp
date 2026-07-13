@@ -29,6 +29,8 @@
 #include <mutex>
 #include <random>
 #include <sstream>
+#include <string>
+#include <system_error>
 #include <vector>
 
 Tracker::Tracker(UserConfig& _userConfig, CalibrationConfig& _calibConfig, ArucoConfig& _arucoConfig, const Localization& _lc)
@@ -553,7 +555,41 @@ void Tracker::StartTrackerCalib()
 
 void Tracker::StartConnection()
 {
-    mVRDriver = tracker::VRDriver{user_config.trackers};
+    if (mVRDriver && mVRClient && mVRClient->IsInit())
+    {
+        gui->ShowPopup(lc.CONNECT_ALREADYCONNECTED, PopupStyle::Info);
+        return;
+    }
+
+    try
+    {
+        mVRDriver = tracker::VRDriver{user_config.trackers};
+    }
+    catch (const tracker::DriverVersionMismatch& e)
+    {
+        ATT_LOG_ERROR(e.what());
+        gui->ShowPopup(lc.CONNECT_DRIVER_MISSMATCH_1 + e.found.ToString() + lc.CONNECT_DRIVER_MISSMATCH_2 + e.expected.ToString(), PopupStyle::Error);
+        mVRDriver.reset();
+        gui->SetStatus(false, StatusItem::Driver);
+        return;
+    }
+    catch (const std::system_error& e)
+    {
+        ATT_LOG_ERROR(e.what());
+        gui->ShowPopup(lc.CONNECT_DRIVER_ERROR + std::to_string(e.code().value()), PopupStyle::Error);
+        mVRDriver.reset();
+        gui->SetStatus(false, StatusItem::Driver);
+        return;
+    }
+    catch (const std::exception& e)
+    {
+        ATT_LOG_ERROR(e.what());
+        gui->ShowPopup(lc.CONNECT_SOMETHINGWRONG + std::string(" ") + e.what(), PopupStyle::Error);
+        mVRDriver.reset();
+        gui->SetStatus(false, StatusItem::Driver);
+        return;
+    }
+
     if (!user_config.disableOpenVrApi)
     {
         mVRClient = std::make_unique<tracker::OpenVRClient>();
@@ -565,38 +601,26 @@ void Tracker::StartConnection()
     if (!mVRClient->CanInit())
     {
         gui->ShowPopup("Unable to initialize steamvr client, is your hmd connected?", PopupStyle::Error);
+        mVRClient.reset();
+        mVRDriver.reset();
+        gui->SetStatus(false, StatusItem::Driver);
         return;
     }
-    mVRClient->Init();
+    try
+    {
+        mVRClient->Init();
+    }
+    catch (const std::exception& e)
+    {
+        ATT_LOG_ERROR(e.what());
+        gui->ShowPopup(lc.CONNECT_CLIENT_ERROR + std::string(e.what()), PopupStyle::Error);
+        mVRClient.reset();
+        mVRDriver.reset();
+        gui->SetStatus(false, StatusItem::Driver);
+        return;
+    }
     gui->SetStatus(true, StatusItem::Driver);
 }
-
-// void Tracker::HandleConnectionErrors()
-// {
-//     using Code = Connection::ErrorCode;
-//     Code code = connection->GetAndResetErrorState();
-//     if (code == Code::OK)
-//         return;
-
-//     gui->SetStatus(false, StatusItem::Driver);
-
-//     if (code == Code::ALREADY_WAITING)
-//         gui->ShowPopup("Already waiting for a connection.", PopupStyle::Error);
-//     else if (code == Code::ALREADY_CONNECTED)
-//         gui->ShowPopup("Connection closed.", PopupStyle::Info);
-//     else if (code == Code::CLIENT_ERROR)
-//         gui->ShowPopup(lc.CONNECT_CLIENT_ERROR + connection->GetErrorMsg(), PopupStyle::Error);
-//     else if (code == Code::BINDINGS_MISSING)
-//         gui->ShowPopup(lc.CONNECT_BINDINGS_ERROR, PopupStyle::Error);
-//     else if (code == Code::DRIVER_ERROR)
-//         gui->ShowPopup(lc.CONNECT_DRIVER_ERROR, PopupStyle::Error);
-//     else if (code == Code::DRIVER_MISMATCH)
-//         gui->ShowPopup(lc.CONNECT_DRIVER_MISSMATCH_1 + connection->GetErrorMsg() +
-//                            lc.CONNECT_DRIVER_MISSMATCH_2 + utils::GetBridgeDriverVersion().ToString(),
-//                        PopupStyle::Error);
-//     else // if (code == Code::SOMETHING_WRONG)
-//         gui->ShowPopup(lc.CONNECT_SOMETHINGWRONG, PopupStyle::Error);
-// }
 
 void Tracker::Start()
 {
