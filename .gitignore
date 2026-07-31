@@ -18,3 +18,7 @@ vcpkg/
 
 # downloaded dependencies
 deps*/
+
+# AI docs
+Claude.md
+AGENTS.md
