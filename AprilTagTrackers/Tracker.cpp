@@ -34,6 +34,38 @@
 #include <system_error>
 #include <vector>
 
+namespace
+{
+
+class TrackerMarkerIdPartition
+{
+public:
+    explicit TrackerMarkerIdPartition(int markersPerTracker)
+        : mMarkersPerTracker(markersPerTracker)
+    {
+    }
+
+    int MainMarkerId(int trackerIndex) const
+    {
+        return trackerIndex * mMarkersPerTracker;
+    }
+
+    bool Contains(int trackerIndex, int markerId) const
+    {
+        return markerId >= MainMarkerId(trackerIndex) && markerId < MainMarkerId(trackerIndex + 1);
+    }
+
+    bool IsMainMarker(int markerId) const
+    {
+        return markerId % mMarkersPerTracker == 0;
+    }
+
+private:
+    int mMarkersPerTracker;
+};
+
+} // namespace
+
 Tracker::Tracker(UserConfig& _userConfig, CalibrationConfig& _calibConfig, const Localization& _lc)
     : mCapture(&_userConfig.videoStreams[0]->camera),
       user_config(_userConfig), calib_config(_calibConfig), lc(_lc)
@@ -710,7 +742,7 @@ void Tracker::CalibrateTracker()
     MarkerDetectionList dets{};
 
     const Index trackerNum = user_config.trackerNum;
-    const int markersPerTracker = user_config.markersPerTracker;
+    const TrackerMarkerIdPartition markerIds{user_config.markersPerTracker};
     const double markerSize = user_config.markerSize * 0.01; // centimeters to meters
 
     const MarkerCorners3f modelMarker = tracker::TrackerUnit::CreateModelMarker(markerSize);
@@ -725,7 +757,7 @@ void Tracker::CalibrateTracker()
         // TODO: dynamically pick the main marker, based on the first seen? need some gui to help as multiple marker tend to get detected in the background while calibrating.
         // might be helpful to draw the id of the marker on each detected, and then some gui to select which detected marker is the main, and which should be added to this one.
         // it should be easy to detect if two markers are moving together, and separate from one not moving in the background
-        const int id = i * user_config.markersPerTracker;
+        const int id = markerIds.MainMarkerId(i);
         unit.AddMarker(id, modelMarker);
         trackerUnits.push_back(std::move(unit));
     }
@@ -752,8 +784,7 @@ void Tracker::CalibrateTracker()
         ATT_ASSERT(markerPoses.rotations.size() == dets.ids.size());
         const double maxDist = user_config.trackerCalibDistance;
 
-        // TODO: stop using hardcoded tracker roles
-        /// 0 = waist, 1 = left foot, 2 = right foot
+        // Tracker roles come from config and are independent of this marker-ID partition.
         for (int trackerIndex = 0; trackerIndex < trackerNum; ++trackerIndex)
         {
             auto& unit = trackerUnits[trackerIndex];
@@ -770,8 +801,8 @@ void Tracker::CalibrateTracker()
                 const MarkerCorners2f& detCorners = dets.corners[detIndex];
                 const RodrPose detMarkerPose{markerPoses.positions[detIndex], math::RodriguesVec3d(markerPoses.rotations[detIndex])};
 
-                // if marker is part of current tracker (usualy, 0 is 0-44, 1 is 45-89 etc), if not, continue to next detection
-                if (detId < (trackerIndex * markersPerTracker) || detId >= ((trackerIndex + 1) * markersPerTracker))
+                // If the marker is not part of the current tracker, continue to the next detection.
+                if (!markerIds.Contains(trackerIndex, detId))
                 {
                     continue;
                 }
@@ -782,7 +813,7 @@ void Tracker::CalibrateTracker()
                     DrawMarker(frame.image, detCorners, COLOR_MARKER_ADDED);
                     continue;
                 }
-                ATT_ASSERT(detId % markersPerTracker != 0, "main marker already added");
+                ATT_ASSERT(!markerIds.IsMainMarker(detId), "main marker already added");
 
                 // if marker is too far away from camera, paint it purple, as adding it could have too much error
                 if (Length(detMarkerPose.position) > maxDist)
@@ -908,6 +939,30 @@ TEST_CASE("PlayspaceCalib applies a known translation")
     CHECK(transformed.y == doctest::Approx(7.0));
     CHECK(transformed.z == doctest::Approx(9.0));
     CHECK(playspace.GetScale() == doctest::Approx(2.0));
+}
+
+TEST_CASE("Tracker marker IDs are partitioned into unchanged contiguous ranges")
+{
+    const TrackerMarkerIdPartition markerIds{45};
+
+    CHECK(markerIds.MainMarkerId(0) == 0);
+    CHECK(markerIds.MainMarkerId(1) == 45);
+    CHECK(markerIds.MainMarkerId(2) == 90);
+
+    CHECK(markerIds.Contains(0, 0));
+    CHECK(markerIds.Contains(0, 44));
+    CHECK(!markerIds.Contains(0, 45));
+    CHECK(!markerIds.Contains(1, 44));
+    CHECK(markerIds.Contains(1, 45));
+    CHECK(markerIds.Contains(1, 89));
+    CHECK(!markerIds.Contains(1, 90));
+
+    CHECK(markerIds.IsMainMarker(0));
+    CHECK(markerIds.IsMainMarker(45));
+    CHECK(markerIds.IsMainMarker(90));
+    CHECK(!markerIds.IsMainMarker(1));
+    CHECK(!markerIds.IsMainMarker(44));
+    CHECK(!markerIds.IsMainMarker(46));
 }
 
 TEST_CASE("PlayspaceCalib pose transforms round trip")
