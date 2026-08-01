@@ -1103,6 +1103,17 @@ TEST_CASE("Existing tracker config without marker ID ranges uses defaults")
     CHECK(markerIds.MainMarkerId(2) == 90);
 }
 
+TEST_CASE("Existing user config keeps the default preview image size")
+{
+    const std::string yaml = "%YAML:1.0\n---\ntrackerNum: 3\n";
+    cv::FileStorage storage{yaml, cv::FileStorage::READ | cv::FileStorage::MEMORY};
+    UserConfig config;
+    serial::FileStorageReader reader{storage.root()};
+    reader.Read(config);
+
+    CHECK(config.previewImageSize == 480);
+}
+
 TEST_CASE("PlayspaceCalib pose transforms round trip")
 {
     tracker::PlayspaceCalib playspace;

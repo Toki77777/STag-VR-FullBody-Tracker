@@ -57,6 +57,8 @@ public:
     REFLECTABLE_FIELD(bool, trackerCalibCenters) = false;
     REFLECTABLE_FIELD(cfg::Validated<double>, depthSmoothing){0, cfg::Clamp(0.0, 1.0)};
     REFLECTABLE_FIELD(float, additionalSmoothing) = 0;
+    ATT_SERIAL_COMMENT("Maximum preview image dimension in pixels");
+    REFLECTABLE_FIELD(cfg::Validated<int>, previewImageSize){480, cfg::GreaterEqual(1)};
     ATT_SERIAL_COMMENT("STag marker library: 0=HD11, 1=HD13, 2=HD15, 3=HD17, 4=HD19, 5=HD21, 6=HD23");
     REFLECTABLE_FIELD(int, markerLibrary) = 0;
     /// TODO: if (value <= 0) value = 45;
