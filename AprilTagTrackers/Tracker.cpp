@@ -8,6 +8,7 @@
 #include "tracker/MainLoopRunner.hpp"
 #include "tracker/TrackerUnit.hpp"
 #include "utils/Assert.hpp"
+#include "utils/Error.hpp"
 #include "utils/LogBatch.hpp"
 #include "utils/SteadyTimer.hpp"
 #include "utils/Test.hpp"
@@ -27,6 +28,7 @@
 #include <array>
 #include <exception>
 #include <iostream>
+#include <limits>
 #include <mutex>
 #include <random>
 #include <sstream>
@@ -80,6 +82,15 @@ public:
     bool IsMainMarker(int trackerIndex, int markerId) const
     {
         return markerId == MainMarkerId(trackerIndex);
+    }
+
+    void EnsureContainsAll(int trackerIndex, const std::vector<int>& markerIds) const
+    {
+        for (const int markerId : markerIds)
+        {
+            if (!Contains(trackerIndex, markerId))
+                throw utils::MakeError("marker ID ", markerId, " is outside tracker ", trackerIndex, " configured range");
+        }
     }
 
 private:
@@ -979,12 +990,14 @@ void Tracker::SetTrackerUnitsFromConfig()
     EnsureTrackersConfigSize(user_config, calib_config);
     if (user_config.trackers.GetSize() == 0) return; // not calibrated yet
 
+    const TrackerMarkerIdPartition markerIds{static_cast<int>(user_config.trackers.GetSize()), user_config.markersPerTracker, user_config.trackers};
     mTrackerUnits.resize(user_config.trackers.GetSize());
     for (Index i = 0; i < static_cast<Index>(mTrackerUnits.size()); ++i)
     {
         const auto config = user_config.trackers[i];
         const auto calib = calib_config.trackers[i];
         auto& unit = mTrackerUnits[i];
+        markerIds.EnsureContainsAll(static_cast<int>(i), calib->ids);
         unit.SetMarkers(calib->ids, calib->corners);
         if (user_config.trackerCalibCenters) unit.RecenterMarkers();
         unit.SetRole(config->role);
@@ -1085,6 +1098,35 @@ TEST_CASE("Invalid tracker marker ID ranges fall back to all defaults")
         const TrackerMarkerIdPartition markerIds{3, 45, trackerConfigs};
         CHECK(markerIds.MainMarkerId(1) == 45);
     }
+}
+
+TEST_CASE("Serialized tracker calibration IDs must stay inside their configured range")
+{
+    const cfg::List<cfg::TrackerUnit> trackerConfigs{2};
+    const TrackerMarkerIdPartition markerIds{2, 45, trackerConfigs};
+
+    DOCTEST_CHECK_NOTHROW(markerIds.EnsureContainsAll(0, {0, 44}));
+    DOCTEST_CHECK_NOTHROW(markerIds.EnsureContainsAll(1, {45, 89}));
+    DOCTEST_CHECK_THROWS_AS(markerIds.EnsureContainsAll(0, {45}), utils::Error);
+    DOCTEST_CHECK_THROWS_AS(markerIds.EnsureContainsAll(1, {-1}), utils::Error);
+}
+
+TEST_CASE("Serialized tracker calibration rejects malformed IDs and corners")
+{
+    tracker::TrackerUnit unit;
+    const MarkerCorners3f marker = tracker::TrackerUnit::CreateModelMarker(0.1);
+
+    DOCTEST_CHECK_NOTHROW(unit.SetMarkers({}, {}));
+    DOCTEST_CHECK_NOTHROW(unit.SetMarkers({0}, {marker}));
+    DOCTEST_CHECK_THROWS_AS(unit.SetMarkers({-1}, {marker}), utils::Error);
+    DOCTEST_CHECK_THROWS_AS(unit.SetMarkers({0, 0}, {marker, marker}), utils::Error);
+
+    MarkerCorners3f nonFiniteMarker = marker;
+    nonFiniteMarker[0].x = std::numeric_limits<float>::quiet_NaN();
+    DOCTEST_CHECK_THROWS_AS(unit.SetMarkers({0}, {nonFiniteMarker}), utils::Error);
+
+    const MarkerCorners3f zeroMarker(4, cv::Point3f{});
+    DOCTEST_CHECK_THROWS_AS(unit.SetMarkers({0}, {zeroMarker}), utils::Error);
 }
 
 TEST_CASE("Existing tracker config without marker ID ranges uses defaults")
