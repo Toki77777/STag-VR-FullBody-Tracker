@@ -10,6 +10,7 @@
 #include "utils/Assert.hpp"
 #include "utils/LogBatch.hpp"
 #include "utils/SteadyTimer.hpp"
+#include "utils/Test.hpp"
 #include "utils/Types.hpp"
 
 #include <opencv2/calib3d.hpp>
@@ -895,4 +896,43 @@ void Tracker::SaveTrackerUnitsToCalib(const std::vector<tracker::TrackerUnit>& t
         calib_config.trackers[i]->corners = trackerUnits[i].GetMarkers();
     }
     calib_config.Save();
+}
+
+TEST_CASE("PlayspaceCalib applies a known translation")
+{
+    tracker::PlayspaceCalib playspace;
+    playspace.Set(cv::Vec3d{1, 2, 3}, cv::Vec3d::all(0), 2.0);
+
+    const cv::Point3d transformed = playspace.Transform(cv::Point3d{4, 5, 6});
+    CHECK(transformed.x == doctest::Approx(5.0));
+    CHECK(transformed.y == doctest::Approx(7.0));
+    CHECK(transformed.z == doctest::Approx(9.0));
+    CHECK(playspace.GetScale() == doctest::Approx(2.0));
+}
+
+TEST_CASE("PlayspaceCalib pose transforms round trip")
+{
+    tracker::PlayspaceCalib playspace;
+    playspace.Set(cv::Vec3d{1.5, -2.0, 0.75}, cv::Vec3d{0.2, -0.4, 0.1}, 1.25);
+    const Pose original{
+        cv::Point3d{4.0, -3.0, 2.0},
+        cv::Quatd::createFromRvec(cv::Vec3d{0.1, 0.3, -0.2})};
+
+    const Pose restored = playspace.InvTransform(playspace.Transform(original));
+    CHECK(restored.position.x == doctest::Approx(original.position.x).epsilon(1e-12));
+    CHECK(restored.position.y == doctest::Approx(original.position.y).epsilon(1e-12));
+    CHECK(restored.position.z == doctest::Approx(original.position.z).epsilon(1e-12));
+    CHECK(restored.rotation.w == doctest::Approx(original.rotation.w).epsilon(1e-12));
+    CHECK(restored.rotation.x == doctest::Approx(original.rotation.x).epsilon(1e-12));
+    CHECK(restored.rotation.y == doctest::Approx(original.rotation.y).epsilon(1e-12));
+    CHECK(restored.rotation.z == doctest::Approx(original.rotation.z).epsilon(1e-12));
+
+    const Pose restoredFromOVR = playspace.InvTransformFromOVR(playspace.TransformToOVR(original));
+    CHECK(restoredFromOVR.position.x == doctest::Approx(original.position.x).epsilon(1e-12));
+    CHECK(restoredFromOVR.position.y == doctest::Approx(original.position.y).epsilon(1e-12));
+    CHECK(restoredFromOVR.position.z == doctest::Approx(original.position.z).epsilon(1e-12));
+    CHECK(restoredFromOVR.rotation.w == doctest::Approx(original.rotation.w).epsilon(1e-12));
+    CHECK(restoredFromOVR.rotation.x == doctest::Approx(original.rotation.x).epsilon(1e-12));
+    CHECK(restoredFromOVR.rotation.y == doctest::Approx(original.rotation.y).epsilon(1e-12));
+    CHECK(restoredFromOVR.rotation.z == doctest::Approx(original.rotation.z).epsilon(1e-12));
 }
