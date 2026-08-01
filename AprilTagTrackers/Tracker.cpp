@@ -39,29 +39,89 @@ namespace
 
 class TrackerMarkerIdPartition
 {
-public:
-    explicit TrackerMarkerIdPartition(int markersPerTracker)
-        : mMarkersPerTracker(markersPerTracker)
+    struct Range
     {
+        int begin;
+        int end;
+
+        bool Contains(int markerId) const
+        {
+            return markerId >= begin && markerId < end;
+        }
+
+        bool Overlaps(const Range& other) const
+        {
+            return begin < other.end && other.begin < end;
+        }
+    };
+
+public:
+    TrackerMarkerIdPartition(int trackerCount, int markersPerTracker, const cfg::List<cfg::TrackerUnit>& trackerConfigs)
+        : mTrackerCount(std::max(0, trackerCount)), mMarkersPerTracker(markersPerTracker)
+    {
+        ResetToDefaults();
+        if (!TryApplyConfiguredRanges(trackerConfigs))
+        {
+            ATT_LOG_ERROR("Invalid or overlapping tracker marker ID ranges; using markersPerTracker defaults.");
+            ResetToDefaults();
+        }
     }
 
     int MainMarkerId(int trackerIndex) const
     {
-        return trackerIndex * mMarkersPerTracker;
+        return GetRange(trackerIndex).begin;
     }
 
     bool Contains(int trackerIndex, int markerId) const
     {
-        return markerId >= MainMarkerId(trackerIndex) && markerId < MainMarkerId(trackerIndex + 1);
+        return GetRange(trackerIndex).Contains(markerId);
     }
 
-    bool IsMainMarker(int markerId) const
+    bool IsMainMarker(int trackerIndex, int markerId) const
     {
-        return markerId % mMarkersPerTracker == 0;
+        return markerId == MainMarkerId(trackerIndex);
     }
 
 private:
+    const Range& GetRange(int trackerIndex) const
+    {
+        return mRanges.at(static_cast<std::size_t>(trackerIndex));
+    }
+
+    void ResetToDefaults()
+    {
+        mRanges.clear();
+        mRanges.reserve(static_cast<std::size_t>(mTrackerCount));
+        for (int trackerIndex = 0; trackerIndex < mTrackerCount; ++trackerIndex)
+        {
+            mRanges.push_back({trackerIndex * mMarkersPerTracker, (trackerIndex + 1) * mMarkersPerTracker});
+        }
+    }
+
+    bool TryApplyConfiguredRanges(const cfg::List<cfg::TrackerUnit>& trackerConfigs)
+    {
+        for (int trackerIndex = 0; trackerIndex < mTrackerCount && trackerIndex < trackerConfigs.GetSize(); ++trackerIndex)
+        {
+            const auto config = trackerConfigs[trackerIndex];
+            const bool useDefault = config->markerIdBegin == -1 && config->markerIdEnd == -1;
+            if (useDefault) continue;
+            if (config->markerIdBegin < 0 || config->markerIdEnd <= config->markerIdBegin) return false;
+            mRanges[trackerIndex] = {config->markerIdBegin, config->markerIdEnd};
+        }
+
+        for (std::size_t lhs = 0; lhs < mRanges.size(); ++lhs)
+        {
+            for (std::size_t rhs = lhs + 1; rhs < mRanges.size(); ++rhs)
+            {
+                if (mRanges[lhs].Overlaps(mRanges[rhs])) return false;
+            }
+        }
+        return true;
+    }
+
+    int mTrackerCount;
     int mMarkersPerTracker;
+    std::vector<Range> mRanges;
 };
 
 } // namespace
@@ -755,7 +815,7 @@ void Tracker::CalibrateTracker()
     MarkerDetectionList dets{};
 
     const Index trackerNum = user_config.trackerNum;
-    const TrackerMarkerIdPartition markerIds{user_config.markersPerTracker};
+    const TrackerMarkerIdPartition markerIds{static_cast<int>(trackerNum), user_config.markersPerTracker, user_config.trackers};
     const double markerSize = user_config.markerSize * 0.01; // centimeters to meters
 
     const MarkerCorners3f modelMarker = tracker::TrackerUnit::CreateModelMarker(markerSize);
@@ -826,7 +886,7 @@ void Tracker::CalibrateTracker()
                     DrawMarker(frame.image, detCorners, COLOR_MARKER_ADDED);
                     continue;
                 }
-                ATT_ASSERT(!markerIds.IsMainMarker(detId), "main marker already added");
+                ATT_ASSERT(!markerIds.IsMainMarker(trackerIndex, detId), "main marker already added");
 
                 // if marker is too far away from camera, paint it purple, as adding it could have too much error
                 if (Length(detMarkerPose.position) > maxDist)
@@ -956,7 +1016,8 @@ TEST_CASE("PlayspaceCalib applies a known translation")
 
 TEST_CASE("Tracker marker IDs are partitioned into unchanged contiguous ranges")
 {
-    const TrackerMarkerIdPartition markerIds{45};
+    const cfg::List<cfg::TrackerUnit> trackerConfigs{3};
+    const TrackerMarkerIdPartition markerIds{3, 45, trackerConfigs};
 
     CHECK(markerIds.MainMarkerId(0) == 0);
     CHECK(markerIds.MainMarkerId(1) == 45);
@@ -970,12 +1031,76 @@ TEST_CASE("Tracker marker IDs are partitioned into unchanged contiguous ranges")
     CHECK(markerIds.Contains(1, 89));
     CHECK(!markerIds.Contains(1, 90));
 
-    CHECK(markerIds.IsMainMarker(0));
-    CHECK(markerIds.IsMainMarker(45));
-    CHECK(markerIds.IsMainMarker(90));
-    CHECK(!markerIds.IsMainMarker(1));
-    CHECK(!markerIds.IsMainMarker(44));
-    CHECK(!markerIds.IsMainMarker(46));
+    CHECK(markerIds.IsMainMarker(0, 0));
+    CHECK(markerIds.IsMainMarker(1, 45));
+    CHECK(markerIds.IsMainMarker(2, 90));
+    CHECK(!markerIds.IsMainMarker(0, 1));
+    CHECK(!markerIds.IsMainMarker(0, 44));
+    CHECK(!markerIds.IsMainMarker(1, 46));
+}
+
+TEST_CASE("Tracker marker ID ranges support per-tracker overrides")
+{
+    cfg::List<cfg::TrackerUnit> trackerConfigs{3};
+    trackerConfigs[1]->markerIdBegin = 100;
+    trackerConfigs[1]->markerIdEnd = 110;
+    trackerConfigs[2]->markerIdBegin = 200;
+    trackerConfigs[2]->markerIdEnd = 220;
+    const TrackerMarkerIdPartition markerIds{3, 45, trackerConfigs};
+
+    CHECK(markerIds.MainMarkerId(0) == 0);
+    CHECK(markerIds.MainMarkerId(1) == 100);
+    CHECK(markerIds.MainMarkerId(2) == 200);
+    CHECK(markerIds.Contains(1, 109));
+    CHECK(!markerIds.Contains(1, 110));
+    CHECK(markerIds.IsMainMarker(2, 200));
+}
+
+TEST_CASE("Invalid tracker marker ID ranges fall back to all defaults")
+{
+    // empty range
+    {
+        cfg::List<cfg::TrackerUnit> trackerConfigs{3};
+        trackerConfigs[1]->markerIdBegin = 100;
+        trackerConfigs[1]->markerIdEnd = 100;
+        const TrackerMarkerIdPartition markerIds{3, 45, trackerConfigs};
+        CHECK(markerIds.MainMarkerId(1) == 45);
+        CHECK(markerIds.Contains(1, 89));
+    }
+
+    // overlap with a default range
+    {
+        cfg::List<cfg::TrackerUnit> trackerConfigs{3};
+        trackerConfigs[1]->markerIdBegin = 44;
+        trackerConfigs[1]->markerIdEnd = 60;
+        const TrackerMarkerIdPartition markerIds{3, 45, trackerConfigs};
+        CHECK(markerIds.MainMarkerId(1) == 45);
+        CHECK(markerIds.MainMarkerId(2) == 90);
+    }
+
+    // only one endpoint configured
+    {
+        cfg::List<cfg::TrackerUnit> trackerConfigs{3};
+        trackerConfigs[1]->markerIdBegin = 100;
+        const TrackerMarkerIdPartition markerIds{3, 45, trackerConfigs};
+        CHECK(markerIds.MainMarkerId(1) == 45);
+    }
+}
+
+TEST_CASE("Existing tracker config without marker ID ranges uses defaults")
+{
+    const std::string yaml = "%YAML:1.0\n---\nmarkersPerTracker: 45\ntrackers:\n  - { role: Waist }\n  - { role: LeftFoot }\n  - { role: RightFoot }\n";
+    cv::FileStorage storage{yaml, cv::FileStorage::READ | cv::FileStorage::MEMORY};
+    UserConfig config;
+    serial::FileStorageReader reader{storage.root()};
+    reader.Read(config);
+
+    CHECK(config.trackers[0]->markerIdBegin == -1);
+    CHECK(config.trackers[0]->markerIdEnd == -1);
+    const TrackerMarkerIdPartition markerIds{3, config.markersPerTracker, config.trackers};
+    CHECK(markerIds.MainMarkerId(0) == 0);
+    CHECK(markerIds.MainMarkerId(1) == 45);
+    CHECK(markerIds.MainMarkerId(2) == 90);
 }
 
 TEST_CASE("PlayspaceCalib pose transforms round trip")
