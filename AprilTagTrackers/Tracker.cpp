@@ -33,9 +33,9 @@
 #include <system_error>
 #include <vector>
 
-Tracker::Tracker(UserConfig& _userConfig, CalibrationConfig& _calibConfig, ArucoConfig& _arucoConfig, const Localization& _lc)
+Tracker::Tracker(UserConfig& _userConfig, CalibrationConfig& _calibConfig, const Localization& _lc)
     : mCapture(&_userConfig.videoStreams[0]->camera),
-      user_config(_userConfig), calib_config(_calibConfig), aruco_config(_arucoConfig), lc(_lc)
+      user_config(_userConfig), calib_config(_calibConfig), lc(_lc)
 {
     SetTrackerUnitsFromConfig();
     mPlayspace.Set(user_config.manualCalib.GetAsReal());

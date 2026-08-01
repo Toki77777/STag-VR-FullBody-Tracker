@@ -127,6 +127,7 @@ public:
     T(CAMERA_CONNECT) = "5. Connect to SteamVR";
     T(CAMERA_START_DETECTION) = "6. Start/Stop";
     T(CAMERA_PREVIEW_CAMERA) = "Preview camera";
+    T(CAMERA_PREVIEW_OUTPUT) = "Preview output";
     T(CAMERA_PREVIEW_CALIBRATION) = "Preview calibration";
     T(CAMERA_CALIBRATION_MODE) = "Calibration mode";
     T(CAMERA_MULTICAM_CALIB) = "Refine calibration using second camera";

@@ -10,7 +10,6 @@
 #include "utils/Env.hpp"
 
 #include <opencv2/core.hpp>
-#include <opencv2/objdetect/aruco_detector.hpp>
 
 #include <string>
 #include <vector>
@@ -68,21 +67,4 @@ public:
     REFLECTABLE_END;
 
     CalibrationConfig calib{};
-};
-
-class ArucoConfig : public serial::Serializable<ArucoConfig>
-{
-public:
-    // cv::aruco::DetectorParameters is a plain value type since OpenCV 4.7
-    using Params = cv::aruco::DetectorParameters;
-
-    ArucoConfig() : Serializable(utils::GetConfigDir() / "aruco.yaml")
-    {
-        params.detectInvertedMarker = true;
-        params.cornerRefinementMethod = cv::aruco::CORNER_REFINE_CONTOUR;
-    }
-
-    REFLECTABLE_BEGIN;
-    REFLECTABLE_FIELD(Params, params);
-    REFLECTABLE_END;
 };

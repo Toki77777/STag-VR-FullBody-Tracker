@@ -37,6 +37,7 @@ CAMERA_START_STEAMVR: "4. Start up SteamVR!"
 CAMERA_CONNECT: "5. Connect to SteamVR"
 CAMERA_START_DETECTION: "6. Start/Stop"
 CAMERA_PREVIEW_CAMERA: Preview camera
+CAMERA_PREVIEW_OUTPUT: Preview output
 CAMERA_PREVIEW_CALIBRATION: Preview calibration
 CAMERA_CALIBRATION_MODE: Calibration mode
 CAMERA_MULTICAM_CALIB: Refine calibration using second camera

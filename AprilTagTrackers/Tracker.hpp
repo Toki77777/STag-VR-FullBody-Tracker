@@ -48,7 +48,7 @@ public:
     Tracker(const Tracker&) = delete;
     Tracker(Tracker&&) = delete;
     /// config and locale references are expected to exceed lifetime of this instance
-    Tracker(UserConfig& _userConfig, CalibrationConfig& _calibConfig, ArucoConfig& _arucoConfig, const Localization& _lc);
+    Tracker(UserConfig& _userConfig, CalibrationConfig& _calibConfig, const Localization& _lc);
     void StartCamera(RefPtr<cfg::Camera> cam);
     void StartCamera() override;
     void StartCameraCalib() override;
@@ -112,7 +112,6 @@ private:
 
     UserConfig& user_config;
     CalibrationConfig& calib_config;
-    const ArucoConfig& aruco_config;
     const Localization& lc;
 
     std::thread cameraThread;
