@@ -1131,7 +1131,7 @@ TEST_CASE("Serialized tracker calibration rejects malformed IDs and corners")
 
 TEST_CASE("Existing tracker config without marker ID ranges uses defaults")
 {
-    const std::string yaml = "%YAML:1.0\n---\nmarkersPerTracker: 45\ntrackers:\n  - { role: Waist }\n  - { role: LeftFoot }\n  - { role: RightFoot }\n";
+    const std::string yaml = "%YAML:1.0\n---\nmarkersPerTracker: 17\ntrackers:\n  - { role: Waist }\n  - { role: LeftFoot }\n  - { role: RightFoot }\n";
     cv::FileStorage storage{yaml, cv::FileStorage::READ | cv::FileStorage::MEMORY};
     UserConfig config;
     serial::FileStorageReader reader{storage.root()};
@@ -1141,8 +1141,17 @@ TEST_CASE("Existing tracker config without marker ID ranges uses defaults")
     CHECK(config.trackers[0]->markerIdEnd == -1);
     const TrackerMarkerIdPartition markerIds{3, config.markersPerTracker, config.trackers};
     CHECK(markerIds.MainMarkerId(0) == 0);
-    CHECK(markerIds.MainMarkerId(1) == 45);
-    CHECK(markerIds.MainMarkerId(2) == 90);
+    CHECK(markerIds.MainMarkerId(1) == 17);
+    CHECK(markerIds.MainMarkerId(2) == 34);
+    CHECK(markerIds.Contains(0, 0));
+    CHECK(markerIds.Contains(0, 16));
+    CHECK(!markerIds.Contains(0, 17));
+    CHECK(markerIds.Contains(1, 17));
+    CHECK(markerIds.Contains(1, 33));
+    CHECK(!markerIds.Contains(1, 34));
+    CHECK(markerIds.Contains(2, 34));
+    CHECK(markerIds.Contains(2, 50));
+    CHECK(!markerIds.Contains(2, 51));
 }
 
 TEST_CASE("Existing user config keeps the default preview image size")
