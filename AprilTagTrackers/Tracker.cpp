@@ -1114,6 +1114,25 @@ TEST_CASE("Existing user config keeps the default preview image size")
     CHECK(config.previewImageSize == 480);
 }
 
+TEST_CASE("markersPerTracker restores its legacy fallback without changing valid values")
+{
+    const auto readMarkersPerTracker = [](int value)
+    {
+        const std::string yaml = "%YAML:1.0\n---\nmarkersPerTracker: " + std::to_string(value) + "\n";
+        cv::FileStorage storage{yaml, cv::FileStorage::READ | cv::FileStorage::MEMORY};
+        UserConfig config;
+        serial::FileStorageReader reader{storage.root()};
+        reader.Read(config);
+        return config.markersPerTracker.Get();
+    };
+
+    CHECK(readMarkersPerTracker(-1) == 45);
+    CHECK(readMarkersPerTracker(0) == 45);
+    CHECK(readMarkersPerTracker(1) == 1);
+    CHECK(readMarkersPerTracker(45) == 45);
+    CHECK(readMarkersPerTracker(123) == 123);
+}
+
 TEST_CASE("PlayspaceCalib pose transforms round trip")
 {
     tracker::PlayspaceCalib playspace;
