@@ -407,7 +407,7 @@ void Tracker::CalibrateCameraCharuco()
             cv::fillConvexPoly(drawImg, points.data(), points.size(), cv::Scalar::all(255));
         }
 
-        preview.Update(drawImg, DRAW_IMG_SIZE);
+        preview.Update(drawImg, user_config.previewImageSize);
 
         // if more than one second has passed since last calibration image, add current frame to calibration images
         // framesSinceLast++;
@@ -580,7 +580,7 @@ void Tracker::CalibrateCamera()
         mCameraFrame.Get(frame);
         cv::Mat& image = frame.image;
         cv::putText(image, std::to_string(i) + "/" + std::to_string(picNum), cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 255, 255));
-        const cv::Size2i drawSize = math::ConstrainSize(math::GetMatSize(image), DRAW_IMG_SIZE);
+        const cv::Size2i drawSize = math::ConstrainSize(math::GetMatSize(image), user_config.previewImageSize);
 
         framesSinceLast++;
         if (framesSinceLast > 50)
@@ -925,7 +925,7 @@ void Tracker::CalibrateTracker()
             }
         }
 
-        if (preview.IsVisible()) preview.Update(frame.image, DRAW_IMG_SIZE);
+        if (preview.IsVisible()) preview.Update(frame.image, user_config.previewImageSize);
     };
 
     // run loop until we stop it

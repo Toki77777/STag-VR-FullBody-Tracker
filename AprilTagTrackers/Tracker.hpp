@@ -34,8 +34,6 @@ class PlayspaceCalibrator;
 
 class Tracker : public ITrackerControl
 {
-    static constexpr int DRAW_IMG_SIZE = 480;
-
     static inline const cv::Scalar COLOR_MARKER_DETECTED{0, 0, 255}; /// blue
     static inline const cv::Scalar COLOR_MARKER_ADDING{255, 0, 255}; /// yellow
     static inline const cv::Scalar COLOR_MARKER_ADDED{0, 255, 0}; /// green
