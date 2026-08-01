@@ -594,6 +594,13 @@ void Tracker::StartConnection()
         return;
     }
 
+    if (!TryCreateVRDriver()) return;
+    if (!TryInitializeVRClient()) return;
+    gui->SetStatus(true, StatusItem::Driver);
+}
+
+bool Tracker::TryCreateVRDriver()
+{
     try
     {
         mVRDriver = tracker::VRDriver{user_config.trackers};
@@ -604,7 +611,7 @@ void Tracker::StartConnection()
         gui->ShowPopup(lc.CONNECT_DRIVER_MISSMATCH_1 + e.found.ToString() + lc.CONNECT_DRIVER_MISSMATCH_2 + e.expected.ToString(), PopupStyle::Error);
         mVRDriver.reset();
         gui->SetStatus(false, StatusItem::Driver);
-        return;
+        return false;
     }
     catch (const std::system_error& e)
     {
@@ -612,7 +619,7 @@ void Tracker::StartConnection()
         gui->ShowPopup(lc.CONNECT_DRIVER_ERROR + std::to_string(e.code().value()), PopupStyle::Error);
         mVRDriver.reset();
         gui->SetStatus(false, StatusItem::Driver);
-        return;
+        return false;
     }
     catch (const std::exception& e)
     {
@@ -620,9 +627,14 @@ void Tracker::StartConnection()
         gui->ShowPopup(lc.CONNECT_SOMETHINGWRONG + (std::string(" ") + e.what()), PopupStyle::Error);
         mVRDriver.reset();
         gui->SetStatus(false, StatusItem::Driver);
-        return;
+        return false;
     }
 
+    return true;
+}
+
+bool Tracker::TryInitializeVRClient()
+{
     if (!user_config.disableOpenVrApi)
     {
         mVRClient = std::make_unique<tracker::OpenVRClient>();
@@ -637,7 +649,7 @@ void Tracker::StartConnection()
         mVRClient.reset();
         mVRDriver.reset();
         gui->SetStatus(false, StatusItem::Driver);
-        return;
+        return false;
     }
     try
     {
@@ -650,9 +662,10 @@ void Tracker::StartConnection()
         mVRClient.reset();
         mVRDriver.reset();
         gui->SetStatus(false, StatusItem::Driver);
-        return;
+        return false;
     }
-    gui->SetStatus(true, StatusItem::Driver);
+
+    return true;
 }
 
 void Tracker::Start()

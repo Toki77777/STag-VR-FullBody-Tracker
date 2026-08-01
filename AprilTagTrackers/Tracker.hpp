@@ -67,6 +67,8 @@ private:
     void CalibrateCameraCharuco();
     void CalibrateTracker();
     void MainLoop();
+    bool TryCreateVRDriver();
+    bool TryInitializeVRClient();
 
     void SetTrackerUnitsFromConfig();
     void SaveTrackerUnitsToCalib(const std::vector<tracker::TrackerUnit>&);
