@@ -43,12 +43,15 @@ public:
     REFLECTABLE_FIELD(std::string, langCode) = "en";
     REFLECTABLE_FIELD(int, trackerNum) = 3;
     REFLECTABLE_FIELD(cfg::Validated<double>, markerSize){9.3, cfg::GreaterEqual(0.01)};
+    // Legacy compatibility: ebd8c5e disabled its median filter and f77d85f removed the reader; retained pending a future decision.
     REFLECTABLE_FIELD(int, numOfPrevValues) = 5;
     REFLECTABLE_FIELD(bool, usePredictive) = true;
+    // Legacy compatibility: e79c6c5 intentionally folded this choice into markerLibrary; retained pending a future decision.
     REFLECTABLE_FIELD(bool, coloredMarkers) = true;
     REFLECTABLE_FIELD(cfg::ManualCalib, manualCalib){};
     REFLECTABLE_FIELD(bool, chessboardCalib) = false;
     REFLECTABLE_FIELD(cfg::Validated<double>, smoothingFactor){0.5, cfg::Clamp(0.0, 1.0)};
+    // Legacy compatibility: e79c6c5 intentionally folded this choice into markerLibrary; retained pending a future decision.
     REFLECTABLE_FIELD(bool, circularMarkers) = false;
     REFLECTABLE_FIELD(cfg::Validated<double>, trackerCalibDistance){0.5, cfg::GreaterEqual(0.5)};
     /// TODO: change to not validated, gets set during calibration, to indicate if the user has done calibration
