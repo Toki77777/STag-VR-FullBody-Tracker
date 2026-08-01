@@ -584,7 +584,7 @@ void Tracker::StartConnection()
     catch (const std::exception& e)
     {
         ATT_LOG_ERROR(e.what());
-        gui->ShowPopup(lc.CONNECT_SOMETHINGWRONG + std::string(" ") + e.what(), PopupStyle::Error);
+        gui->ShowPopup(lc.CONNECT_SOMETHINGWRONG + (std::string(" ") + e.what()), PopupStyle::Error);
         mVRDriver.reset();
         gui->SetStatus(false, StatusItem::Driver);
         return;
