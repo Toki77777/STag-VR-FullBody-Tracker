@@ -1165,6 +1165,20 @@ TEST_CASE("Existing user config keeps the default preview image size")
     CHECK(config.previewImageSize == 480);
 }
 
+TEST_CASE("Existing user config ignores the removed ignoreTracker0 key")
+{
+    const std::string yaml = "%YAML:1.0\n---\nignoreTracker0: 1\ntrackerNum: 7\nmarkerSize: 12.5\nmarkersPerTracker: 17\npreviewImageSize: 360\n";
+    cv::FileStorage storage{yaml, cv::FileStorage::READ | cv::FileStorage::MEMORY};
+    UserConfig config;
+    serial::FileStorageReader reader{storage.root()};
+    DOCTEST_CHECK_NOTHROW(reader.Read(config));
+
+    CHECK(config.trackerNum == 7);
+    CHECK(config.markerSize.Get() == doctest::Approx(12.5));
+    CHECK(config.markersPerTracker == 17);
+    CHECK(config.previewImageSize == 360);
+}
+
 TEST_CASE("markersPerTracker restores its legacy fallback without changing valid values")
 {
     const auto readMarkersPerTracker = [](int value)

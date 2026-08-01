@@ -45,7 +45,6 @@ public:
     REFLECTABLE_FIELD(cfg::Validated<double>, markerSize){9.3, cfg::GreaterEqual(0.01)};
     REFLECTABLE_FIELD(int, numOfPrevValues) = 5;
     REFLECTABLE_FIELD(bool, usePredictive) = true;
-    REFLECTABLE_FIELD(bool, ignoreTracker0) = false;
     REFLECTABLE_FIELD(bool, coloredMarkers) = true;
     REFLECTABLE_FIELD(cfg::ManualCalib, manualCalib){};
     REFLECTABLE_FIELD(bool, chessboardCalib) = false;
