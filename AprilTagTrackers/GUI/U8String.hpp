@@ -6,6 +6,7 @@
 
 #include "serial/Serial.hpp"
 
+#include <ostream>
 #include <string>
 #include <string_view>
 
@@ -34,6 +35,9 @@ public:
     friend U8String operator+(const U8String& lhs, const U8String& rhs) { return lhs.str + rhs.str; }
     friend U8String operator+(const U8String& lhs, const std::string& rhs) { return lhs.str + rhs; }
     friend U8String operator+(const std::string& lhs, const U8String& rhs) { return lhs + rhs.str; }
+    /// write the utf8 bytes directly, wxWidgets 3.3 removed the global
+    /// std::ostream operator on wxString that the implicit conversion relied on
+    friend std::ostream& operator<<(std::ostream& os, const U8String& rhs) { return os << rhs.str; }
 
 private:
     std::string str;

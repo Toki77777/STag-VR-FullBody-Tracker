@@ -9,8 +9,8 @@
 #include "serial/Serializable.hpp"
 #include "utils/Env.hpp"
 
-#include <opencv2/aruco.hpp>
 #include <opencv2/core.hpp>
+#include <opencv2/objdetect/aruco_detector.hpp>
 
 #include <string>
 #include <vector>
@@ -73,17 +73,16 @@ public:
 class ArucoConfig : public serial::Serializable<ArucoConfig>
 {
 public:
-    using ParamsPtr = cv::Ptr<cv::aruco::DetectorParameters>;
+    // cv::aruco::DetectorParameters is a plain value type since OpenCV 4.7
+    using Params = cv::aruco::DetectorParameters;
 
     ArucoConfig() : Serializable(utils::GetConfigDir() / "aruco.yaml")
     {
-        auto p = cv::aruco::DetectorParameters::create();
-        p->detectInvertedMarker = true;
-        p->cornerRefinementMethod = cv::aruco::CORNER_REFINE_CONTOUR;
-        params = p;
+        params.detectInvertedMarker = true;
+        params.cornerRefinementMethod = cv::aruco::CORNER_REFINE_CONTOUR;
     }
 
     REFLECTABLE_BEGIN;
-    REFLECTABLE_FIELD(ParamsPtr, params);
+    REFLECTABLE_FIELD(Params, params);
     REFLECTABLE_END;
 };

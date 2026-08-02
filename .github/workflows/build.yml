@@ -9,7 +9,7 @@ on:
     paths-ignore: ["**.md"]
 
 env:
-  VCPKG_VERSION: "2023.02.24"
+  VCPKG_VERSION: "2026.06.24"
   # read only permission if pull request
   VCPKG_BINARY_SOURCES: "clear;nuget,GitHub,read${{ github.event_name == 'push' && 'write' || '' }}"
 
@@ -21,16 +21,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-22.04]
+        os: [windows-latest, ubuntu-24.04]
         include:
           - os: "windows-latest"
             mono: ""
-          - os: "ubuntu-22.04"
+          - os: "ubuntu-24.04"
             mono: "mono"
 
     steps:
       - name: Checkout project
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       - name: Install Dependencies (Linux)
         if: runner.os == 'Linux'
@@ -38,7 +38,7 @@ jobs:
           sudo apt-get update -y &&
           sudo apt-get install -y libunwind-dev &&
           sudo apt-get install -y
-          build-essential tar curl zip unzip pkg-config autoconf ninja-build
+          build-essential tar curl zip unzip pkg-config autoconf autoconf-archive automake libtool libltdl-dev ninja-build mono-complete
           libudev-dev freeglut3-dev libgtk-3-dev libsecret-1-dev libgcrypt20-dev libsystemd-dev nasm
           libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-tools gstreamer1.0-x gstreamer1.0-alsa gstreamer1.0-gl gstreamer1.0-gtk3 gstreamer1.0-qt5 gstreamer1.0-pulseaudio
 
@@ -109,21 +109,21 @@ jobs:
 
       - name: Upload Release (Linux)
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v7
         with:
           name: AprilTagTrackers-Linux.tar
           path: AprilTagTrackers-Linux.tar
 
       - name: Upload Debug (Linux)
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v7
         with:
           name: AprilTagTrackers-Debug-Linux.tar
           path: AprilTagTrackers-Debug-Linux.tar
 
       - name: Upload Release (Windows)
         if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v7
         with:
           name: AprilTagTrackers-Windows
           path: |
@@ -132,21 +132,21 @@ jobs:
 
       - name: Upload Release PDB (Windows)
         if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v7
         with:
           name: AprilTagTrackers.pdb
           path: install/release/**.pdb
 
       - name: Upload Debug (Windows)
         if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v7
         with:
           name: AprilTagTrackers-Debug-Windows
           path: install/debug
 
       - name: Upload Logs
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v7
         with:
           name: Logs-${{ runner.os }}
           path: |

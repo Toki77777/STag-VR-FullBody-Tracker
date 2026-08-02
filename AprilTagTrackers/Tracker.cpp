@@ -12,12 +12,13 @@
 #include "utils/SteadyTimer.hpp"
 #include "utils/Types.hpp"
 
-#include <opencv2/aruco.hpp>
-#include <opencv2/aruco/charuco.hpp>
+#include <opencv2/calib3d.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/objdetect/aruco_detector.hpp>
+#include <opencv2/objdetect/charuco_detector.hpp>
 #include <opencv2/videoio.hpp>
 #include <ps3eye/PSEyeVideoCapture.h>
 
@@ -28,6 +29,8 @@
 #include <mutex>
 #include <random>
 #include <sstream>
+#include <string>
+#include <system_error>
 #include <vector>
 
 Tracker::Tracker(UserConfig& _userConfig, CalibrationConfig& _calibConfig, ArucoConfig& _arucoConfig, const Localization& _lc)
@@ -187,15 +190,21 @@ void Tracker::CalibrateCameraCharuco()
     cv::Mat gray;
     cv::Mat drawImg;
 
-    cv::Ptr<cv::aruco::Dictionary> dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50);
-    cv::Ptr<cv::aruco::DetectorParameters> params = cv::aruco::DetectorParameters::create();
-
-    // generate and show our charuco board that will be used for calibration
-    cv::Ptr<cv::aruco::CharucoBoard> board = cv::aruco::CharucoBoard::create(8, 7, 0.04f, 0.02f, dictionary);
-    cv::Mat boardImage;
+    const cv::aruco::Dictionary dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50);
+    cv::aruco::DetectorParameters params;
 
     // set our detectors marker border bits to 1 since thats what charuco uses
-    params->markerBorderBits = 1;
+    params.markerBorderBits = 1;
+
+    // generate and show our charuco board that will be used for calibration
+    cv::aruco::CharucoBoard board(cv::Size(8, 7), 0.04f, 0.02f, dictionary);
+    // OpenCV 4.7 changed the charuco pattern generation for boards with an even row count,
+    // keep detecting the boards printed for previous versions of this app
+    board.setLegacyPattern(true);
+    cv::Mat boardImage;
+
+    const cv::aruco::ArucoDetector detector(dictionary, params);
+    const cv::aruco::CharucoDetector charucoDetector(board);
 
     // int framesSinceLast = -2 * user_config.camFps;
     auto timeOfLast = std::chrono::steady_clock::now();
@@ -216,6 +225,22 @@ void Tracker::CalibrateCameraCharuco()
     std::vector<int> markerIds;
     std::vector<std::vector<cv::Point2f>> markerCorners;
     std::vector<std::vector<cv::Point2f>> rejectedCorners;
+
+    // cv::aruco::calibrateCameraCharuco was removed from the new aruco api,
+    // match the collected charuco corners per view and calibrate directly
+    const auto calibrateFromCharuco = [&](const cv::Size2i& imageSize) {
+        std::vector<std::vector<cv::Point3f>> allObjPoints(allCharucoCorners.size());
+        std::vector<std::vector<cv::Point2f>> allImgPoints(allCharucoCorners.size());
+        for (std::size_t view = 0; view < allCharucoCorners.size(); ++view)
+        {
+            board.matchImagePoints(allCharucoCorners[view], allCharucoIds[view],
+                                   allObjPoints[view], allImgPoints[view]);
+        }
+        cv::calibrateCamera(allObjPoints, allImgPoints, imageSize,
+                            cameraMatrix, distCoeffs, R, T,
+                            stdDeviationsIntrinsics, stdDeviationsExtrinsics, perViewErrors,
+                            cv::CALIB_USE_LU);
+    };
 
     auto preview = gui->CreatePreviewControl();
 
@@ -258,16 +283,14 @@ void Tracker::CalibrateCameraCharuco()
                 allCharucoIds.erase(allCharucoIds.begin() + maxPerViewErrorIdx);
 
                 // recalibrate camera without the problematic frame
-                cv::aruco::calibrateCameraCharuco(allCharucoCorners, allCharucoIds, board, math::GetMatSize(frame.image),
-                                                  cameraMatrix, distCoeffs, R, T, stdDeviationsIntrinsics, stdDeviationsExtrinsics, perViewErrors,
-                                                  cv::CALIB_USE_LU);
+                calibrateFromCharuco(math::GetMatSize(frame.image));
 
                 picsTaken--;
             }
         }
 
         cvtColor(frame.image, gray, cv::COLOR_BGR2GRAY);
-        cv::aruco::detectMarkers(gray, dictionary, markerCorners, markerIds, params, rejectedCorners);
+        detector.detectMarkers(gray, markerCorners, markerIds, rejectedCorners);
 
         // TODO: If markers are detected, the image gets updated, and then the calibration timer below
         // captures another image, in the time before the opencv loop updates the preview on screen,
@@ -291,7 +314,7 @@ void Tracker::CalibrateCameraCharuco()
             // if any button was pressed
 
             // detect our markers
-            cv::aruco::refineDetectedMarkers(gray, board, markerCorners, markerIds, rejectedCorners);
+            detector.refineDetectedMarkers(gray, board, markerCorners, markerIds, rejectedCorners);
 
             if (markerIds.size() > 0)
             {
@@ -299,7 +322,7 @@ void Tracker::CalibrateCameraCharuco()
                 std::vector<cv::Point2f> charucoCorners;
                 std::vector<int> charucoIds;
                 // using data from aruco detection we refine the search of chessboard corners for higher accuracy
-                cv::aruco::interpolateCornersCharuco(markerCorners, markerIds, gray, board, charucoCorners, charucoIds);
+                charucoDetector.detectBoard(gray, charucoCorners, charucoIds, markerCorners, markerIds);
                 if (charucoIds.size() > 15)
                 {
                     // if corners were found, we draw them
@@ -314,9 +337,7 @@ void Tracker::CalibrateCameraCharuco()
                         try
                         {
                             // Calibrate camera using our data
-                            cv::aruco::calibrateCameraCharuco(allCharucoCorners, allCharucoIds, board, math::GetMatSize(frame.image),
-                                                              cameraMatrix, distCoeffs, R, T, stdDeviationsIntrinsics, stdDeviationsExtrinsics, perViewErrors,
-                                                              cv::CALIB_USE_LU);
+                            calibrateFromCharuco(math::GetMatSize(frame.image));
                         }
                         catch (const cv::Exception& e)
                         {
@@ -534,7 +555,41 @@ void Tracker::StartTrackerCalib()
 
 void Tracker::StartConnection()
 {
-    mVRDriver = tracker::VRDriver{user_config.trackers};
+    if (mVRDriver && mVRClient && mVRClient->IsInit())
+    {
+        gui->ShowPopup(lc.CONNECT_ALREADYCONNECTED, PopupStyle::Info);
+        return;
+    }
+
+    try
+    {
+        mVRDriver = tracker::VRDriver{user_config.trackers};
+    }
+    catch (const tracker::DriverVersionMismatch& e)
+    {
+        ATT_LOG_ERROR(e.what());
+        gui->ShowPopup(lc.CONNECT_DRIVER_MISSMATCH_1 + e.found.ToString() + lc.CONNECT_DRIVER_MISSMATCH_2 + e.expected.ToString(), PopupStyle::Error);
+        mVRDriver.reset();
+        gui->SetStatus(false, StatusItem::Driver);
+        return;
+    }
+    catch (const std::system_error& e)
+    {
+        ATT_LOG_ERROR(e.what());
+        gui->ShowPopup(lc.CONNECT_DRIVER_ERROR + std::to_string(e.code().value()), PopupStyle::Error);
+        mVRDriver.reset();
+        gui->SetStatus(false, StatusItem::Driver);
+        return;
+    }
+    catch (const std::exception& e)
+    {
+        ATT_LOG_ERROR(e.what());
+        gui->ShowPopup(lc.CONNECT_SOMETHINGWRONG + (std::string(" ") + e.what()), PopupStyle::Error);
+        mVRDriver.reset();
+        gui->SetStatus(false, StatusItem::Driver);
+        return;
+    }
+
     if (!user_config.disableOpenVrApi)
     {
         mVRClient = std::make_unique<tracker::OpenVRClient>();
@@ -546,38 +601,26 @@ void Tracker::StartConnection()
     if (!mVRClient->CanInit())
     {
         gui->ShowPopup("Unable to initialize steamvr client, is your hmd connected?", PopupStyle::Error);
+        mVRClient.reset();
+        mVRDriver.reset();
+        gui->SetStatus(false, StatusItem::Driver);
         return;
     }
-    mVRClient->Init();
+    try
+    {
+        mVRClient->Init();
+    }
+    catch (const std::exception& e)
+    {
+        ATT_LOG_ERROR(e.what());
+        gui->ShowPopup(lc.CONNECT_CLIENT_ERROR + std::string(e.what()), PopupStyle::Error);
+        mVRClient.reset();
+        mVRDriver.reset();
+        gui->SetStatus(false, StatusItem::Driver);
+        return;
+    }
     gui->SetStatus(true, StatusItem::Driver);
 }
-
-// void Tracker::HandleConnectionErrors()
-// {
-//     using Code = Connection::ErrorCode;
-//     Code code = connection->GetAndResetErrorState();
-//     if (code == Code::OK)
-//         return;
-
-//     gui->SetStatus(false, StatusItem::Driver);
-
-//     if (code == Code::ALREADY_WAITING)
-//         gui->ShowPopup("Already waiting for a connection.", PopupStyle::Error);
-//     else if (code == Code::ALREADY_CONNECTED)
-//         gui->ShowPopup("Connection closed.", PopupStyle::Info);
-//     else if (code == Code::CLIENT_ERROR)
-//         gui->ShowPopup(lc.CONNECT_CLIENT_ERROR + connection->GetErrorMsg(), PopupStyle::Error);
-//     else if (code == Code::BINDINGS_MISSING)
-//         gui->ShowPopup(lc.CONNECT_BINDINGS_ERROR, PopupStyle::Error);
-//     else if (code == Code::DRIVER_ERROR)
-//         gui->ShowPopup(lc.CONNECT_DRIVER_ERROR, PopupStyle::Error);
-//     else if (code == Code::DRIVER_MISMATCH)
-//         gui->ShowPopup(lc.CONNECT_DRIVER_MISSMATCH_1 + connection->GetErrorMsg() +
-//                            lc.CONNECT_DRIVER_MISSMATCH_2 + utils::GetBridgeDriverVersion().ToString(),
-//                        PopupStyle::Error);
-//     else // if (code == Code::SOMETHING_WRONG)
-//         gui->ShowPopup(lc.CONNECT_SOMETHINGWRONG, PopupStyle::Error);
-// }
 
 void Tracker::Start()
 {

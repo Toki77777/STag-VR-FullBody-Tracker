@@ -169,7 +169,7 @@ NOTE: Make sure the pattern on the trackers is clearly visible and is not obstru
 
 ## Installing the SteamVR driver
 
-**Since version 0.4, we have an installer! Simply run install_driver.exe from driver_files and it will do these steps for you!**
+**Since version 0.4, we have an installer! Simply run install_driver.bat from the driver_files folder and it will do these steps for you!**
 
 Inside the driver_files folder, there is a apriltagtrackers folder. Copy this folder to "Steam/steamapps/common/SteamVR/drivers". Now, open "Steam/config/steamvr.vrsettings" and, under "steamvr", add the field ```"activateMultipleDrivers" : true,``` . The section will now look something like:
 ```

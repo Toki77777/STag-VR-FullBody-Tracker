@@ -57,37 +57,40 @@ public:
     {
         const auto halfSize = static_cast<float>(markerSizeM / 2.0);
         return {
-            cv::Point3f(-halfSize, halfSize, 0),   // top right
-            cv::Point3f(halfSize, halfSize, 0),    // top left
-            cv::Point3f(halfSize, -halfSize, 0),   // bottom left
+            cv::Point3f(-halfSize, halfSize, 0), // top right
+            cv::Point3f(halfSize, halfSize, 0), // top left
+            cv::Point3f(halfSize, -halfSize, 0), // bottom left
             cv::Point3f(-halfSize, -halfSize, 0)}; // bottom right
     }
 
     void RecenterMarkers()
     {
-        RecenterCornersList(mArucoBoard->objPoints);
+        RecenterCornersList(mMarkers);
+        RebuildArucoBoard();
     }
 
     void SetMarkers(IdsList ids, MarkersList cornersList)
     {
         EnsureMarkers(ids, cornersList);
-        mArucoBoard->ids = std::move(ids);
-        mArucoBoard->objPoints = std::move(cornersList);
+        mIds = std::move(ids);
+        mMarkers = std::move(cornersList);
+        RebuildArucoBoard();
     }
     void AddMarker(int id, MarkerCorners3f corners)
     {
         EnsureCorners(corners);
-        mArucoBoard->ids.push_back(id);
-        mArucoBoard->objPoints.push_back(std::move(corners));
+        mIds.push_back(id);
+        mMarkers.push_back(std::move(corners));
+        RebuildArucoBoard();
     }
 
     void SetRole(cfg::TrackerRole role) { mRole = role; }
 
     bool HasMarkerId(int id) const { return std::find(GetIds().begin(), GetIds().end(), id) != GetIds().end(); }
-    Index GetMarkerCount() { return mArucoBoard->ids.size(); }
+    Index GetMarkerCount() { return mIds.size(); }
     /// best tell for calibration is whether the corner offsets of markers have been set
     /// so if they are all zero this could return a false positive
-    bool IsCalibrated() const { return !mArucoBoard->objPoints.empty(); }
+    bool IsCalibrated() const { return !mMarkers.empty(); }
     /// more accurate and expensive check
     bool EnsureIsCalibrated() const
     {
@@ -110,15 +113,31 @@ public:
     const RodrPose& GetPoseFromDriver() const { return mDriverPose; }
 
     const ArucoBoardSharedPtr& GetArucoBoard() const { return mArucoBoard; }
-    const MarkersList& GetMarkers() const { return mArucoBoard->objPoints; }
-    const IdsList& GetIds() const { return mArucoBoard->ids; }
+    const MarkersList& GetMarkers() const { return mMarkers; }
+    const IdsList& GetIds() const { return mIds; }
 
 private:
-    /// stores ids and corners of markers
-    ArucoBoardSharedPtr mArucoBoard = cv::aruco::Board::create(
-        MarkersList{},
-        cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50),
-        IdsList{});
+    /// cv::aruco::Board is immutable since OpenCV 4.7,
+    /// so recreate it whenever the marker list changes
+    void RebuildArucoBoard()
+    {
+        if (mIds.empty())
+        {
+            mArucoBoard.release();
+            return;
+        }
+        // the dictionary is unused, detection happens through StagWrapper,
+        // but the board requires one to be constructed
+        static const cv::aruco::Dictionary dictionary =
+            cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50);
+        mArucoBoard = cv::makePtr<cv::aruco::Board>(mMarkers, dictionary, mIds);
+    }
+
+    /// ids and corners of markers, source of truth for mArucoBoard
+    IdsList mIds{};
+    MarkersList mMarkers{};
+    /// immutable snapshot of mIds and mMarkers, null while they are empty
+    ArucoBoardSharedPtr mArucoBoard{};
 
     RodrPose mPose{};
     cv::Point2d mMaskCenter{};

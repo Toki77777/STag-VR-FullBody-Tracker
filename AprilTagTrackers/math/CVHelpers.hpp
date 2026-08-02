@@ -5,6 +5,8 @@
 #include "Helpers.hpp"
 #include "utils/Error.hpp"
 
+#include <opencv2/calib3d.hpp>
+
 #include <array>
 
 namespace math
@@ -27,14 +29,25 @@ inline void EstimatePoseSingleMarkers(const std::vector<MarkerCorners2f>& corner
                                       const cfg::CameraCalib& camera,
                                       EstimatePoseSingleMarkersResult& result)
 {
-    result.positions.clear();
-    result.rotations.clear();
+    result.positions.resize(corners.size());
+    result.rotations.resize(corners.size());
 
-    cv::aruco::estimatePoseSingleMarkers(
-        corners,
-        static_cast<float>(markerSize),
-        camera.cameraMatrix, camera.distortionCoeffs,
-        result.rotations, result.positions);
+    // cv::aruco::estimatePoseSingleMarkers was removed from the new aruco api,
+    // solve each marker against the model corners defined in the function comment above
+    const auto halfSize = static_cast<float>(markerSize / 2.0);
+    const MarkerCorners3f modelCorners{
+        cv::Point3f(-halfSize, halfSize, 0),
+        cv::Point3f(halfSize, halfSize, 0),
+        cv::Point3f(halfSize, -halfSize, 0),
+        cv::Point3f(-halfSize, -halfSize, 0)};
+
+    for (std::size_t i = 0; i < corners.size(); ++i)
+    {
+        cv::solvePnP(modelCorners, corners[i],
+                     camera.cameraMatrix, camera.distortionCoeffs,
+                     result.rotations[i], result.positions[i],
+                     false, cv::SOLVEPNP_IPPE_SQUARE);
+    }
 }
 
 // This function receives the detected markers and returns the pose of a marker board composed by those markers.
@@ -51,11 +64,23 @@ inline std::tuple<RodrPose, int> EstimatePoseTracker(const std::vector<MarkerCor
                                                      const RodrPose& predictiveGuess = {})
 {
     RodrPose outPose = predictiveGuess;
-    const int estimated = cv::aruco::estimatePoseBoard(
-        corners, ids, board,
+    // board is null before tracker calibration has added any markers
+    if (!board || corners.empty()) return {outPose, 0};
+
+    // cv::aruco::estimatePoseBoard was removed from the new aruco api,
+    // match the detections against the board and solve the pose ourselves
+    cv::Mat objPoints;
+    cv::Mat imgPoints;
+    board->matchImagePoints(corners, ids, objPoints, imgPoints);
+    if (objPoints.empty()) return {outPose, 0};
+
+    const bool solved = cv::solvePnP(
+        objPoints, imgPoints,
         camera.cameraMatrix, camera.distortionCoeffs,
         outPose.rotation.value, outPose.position,
         usePredictive);
+    if (!solved) return {outPose, 0};
+    const int estimated = static_cast<int>(objPoints.total() / NUM_CORNERS);
     return {outPose, estimated};
 }
 

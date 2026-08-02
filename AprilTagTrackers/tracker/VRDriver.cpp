@@ -74,6 +74,10 @@ TEST_CASE("VerifyAndParseResponse")
 namespace tracker
 {
 
+DriverVersionMismatch::DriverVersionMismatch(SemVer found, SemVer expected)
+    : std::runtime_error("incompatible bridge driver: " + found.ToString() + " expected: " + expected.ToString()),
+      found(found), expected(expected) {}
+
 VRDriver::VRDriver(const cfg::List<cfg::TrackerUnit>& trackers)
     : mBridge(IPC::CreateDriverClient())
 {
@@ -123,9 +127,10 @@ int VRDriver::CmdGetTrackerCount()
     if (count < 0) throw std::runtime_error("invalid tracker count: " + std::to_string(count));
 
     const SemVer expected = utils::GetBridgeDriverVersion();
-    if (!SemVer::Compatible(SemVer::Parse(versionStr), expected))
+    const SemVer found = SemVer::Parse(versionStr);
+    if (!SemVer::Compatible(found, expected))
     {
-        throw std::runtime_error("incompatible bridge driver: " + versionStr + " expected: " + expected.ToString());
+        throw DriverVersionMismatch(found, expected);
     }
 
     return count;

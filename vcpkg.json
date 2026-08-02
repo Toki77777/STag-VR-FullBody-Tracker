@@ -7,11 +7,34 @@
             "name": "opencv4",
             "default-features": false,
             "features": [
-                "contrib",
+                "calib3d",
+                {
+                    "name": "dshow",
+                    "platform": "windows"
+                },
                 "ffmpeg",
+                "fs",
+                {
+                    "name": "gtk",
+                    "platform": "linux"
+                },
+                "highgui",
+                "intrinsics",
                 "ipp",
-                "opengl",
-                "jpeg"
+                "jpeg",
+                {
+                    "name": "msmf",
+                    "platform": "windows"
+                },
+                "thread",
+                {
+                    "name": "v4l",
+                    "platform": "linux"
+                },
+                {
+                    "name": "win32ui",
+                    "platform": "windows"
+                }
             ]
         },
         {
@@ -32,5 +55,5 @@
         "doctest",
         "taskflow"
     ],
-    "builtin-baseline": "6f7ffeb18f99796233b958aaaf14ec7bd4fb64b2"
+    "builtin-baseline": "cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3"
 }
