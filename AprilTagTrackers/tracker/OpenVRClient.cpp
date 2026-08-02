@@ -62,12 +62,9 @@ Pose OVRPoseMatrixToPose(vr::HmdMatrix34_t matrix)
 
     cv::Point3d pos{matrix.m[0][3], matrix.m[1][3], matrix.m[2][3]};
 
-    // openvr is +x right, +y up, -z forward
-    // opencv is +x right, -y up, +z forward
-    // So negate y and z of pos and rot to convert
-    // Except thats not true?
-    // transform to -x right, +y up, +z forward
-    // which is apparently what ATT uses sometimes
+    // OpenVR is +x right, +y up, -z forward; ATT is -x right, +y up, +z forward.
+    // Negating x and z is a 180-degree rotation about y, used here as the basis
+    // change for both position and orientation.
     CoordTransformOVR(pos);
     CoordTransformOVR(rot);
 
@@ -108,6 +105,64 @@ TEST_CASE("OpenVR tracked HMD pose converts valid raw coordinates to ATT coordin
     CHECK(pose->rotation.x == doctest::Approx(0.0));
     CHECK(pose->rotation.y == doctest::Approx(0.0));
     CHECK(pose->rotation.z == doctest::Approx(0.0));
+}
+
+TEST_CASE("OpenVR HMD rotation conversion flips x/z angles and preserves y angles")
+{
+    struct RotationCase
+    {
+        const char* axis;
+        vr::HmdMatrix34_t openVR;
+        cv::Matx33d expectedATT;
+    };
+
+    const std::array<RotationCase, 3> cases{{
+        {"x",
+         {{{1.0F, 0.0F, 0.0F, 0.0F},
+           {0.0F, 0.0F, -1.0F, 0.0F},
+           {0.0F, 1.0F, 0.0F, 0.0F}}},
+         {1.0, 0.0, 0.0,
+          0.0, 0.0, 1.0,
+          0.0, -1.0, 0.0}},
+        // Unlike x and z, the y-axis angle must remain unchanged by the basis change.
+        {"y",
+         {{{0.0F, 0.0F, 1.0F, 0.0F},
+           {0.0F, 1.0F, 0.0F, 0.0F},
+           {-1.0F, 0.0F, 0.0F, 0.0F}}},
+         {0.0, 0.0, 1.0,
+          0.0, 1.0, 0.0,
+          -1.0, 0.0, 0.0}},
+        {"z",
+         {{{0.0F, -1.0F, 0.0F, 0.0F},
+           {1.0F, 0.0F, 0.0F, 0.0F},
+           {0.0F, 0.0F, 1.0F, 0.0F}}},
+         {0.0, 1.0, 0.0,
+          -1.0, 0.0, 0.0,
+          0.0, 0.0, 1.0}},
+    }};
+
+    for (const auto& rotationCase : cases)
+    {
+        CAPTURE(rotationCase.axis);
+        vr::TrackedDevicePose_t trackedPose{};
+        trackedPose.mDeviceToAbsoluteTracking = rotationCase.openVR;
+        trackedPose.eTrackingResult = vr::TrackingResult_Running_OK;
+        trackedPose.bPoseIsValid = true;
+        trackedPose.bDeviceIsConnected = true;
+
+        const auto pose = OVRTrackedDevicePoseToPose(trackedPose);
+
+        REQUIRE(pose.has_value());
+        const cv::Matx33d actualATT = pose->rotation.toRotMat3x3(cv::QUAT_ASSUME_UNIT);
+        for (int row = 0; row < 3; ++row)
+        {
+            for (int col = 0; col < 3; ++col)
+            {
+                CHECK(actualATT(row, col) ==
+                      doctest::Approx(rotationCase.expectedATT(row, col)).epsilon(1e-12));
+            }
+        }
+    }
 }
 
 TEST_CASE("OpenVR tracked HMD pose rejects unavailable and degraded tracking")
