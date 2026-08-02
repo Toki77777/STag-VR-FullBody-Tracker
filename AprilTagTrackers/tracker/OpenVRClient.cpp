@@ -2,7 +2,9 @@
 
 #include "Helpers.hpp"
 #include "utils/Env.hpp"
+#include "utils/Test.hpp"
 
+#include <array>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -70,6 +72,79 @@ Pose OVRPoseMatrixToPose(vr::HmdMatrix34_t matrix)
     CoordTransformOVR(rot);
 
     return Pose{pos, rot};
+}
+
+std::optional<Pose> OVRTrackedDevicePoseToPose(const vr::TrackedDevicePose_t& trackedPose)
+{
+    if (!trackedPose.bDeviceIsConnected ||
+        !trackedPose.bPoseIsValid ||
+        trackedPose.eTrackingResult != vr::TrackingResult_Running_OK)
+    {
+        return std::nullopt;
+    }
+    return OVRPoseMatrixToPose(trackedPose.mDeviceToAbsoluteTracking);
+}
+
+TEST_CASE("OpenVR tracked HMD pose converts valid raw coordinates to ATT coordinates")
+{
+    vr::TrackedDevicePose_t trackedPose{};
+    trackedPose.mDeviceToAbsoluteTracking = vr::HmdMatrix34_t{{
+        {1.0F, 0.0F, 0.0F, 1.0F},
+        {0.0F, 1.0F, 0.0F, 2.0F},
+        {0.0F, 0.0F, 1.0F, 3.0F},
+    }};
+    trackedPose.eTrackingResult = vr::TrackingResult_Running_OK;
+    trackedPose.bPoseIsValid = true;
+    trackedPose.bDeviceIsConnected = true;
+
+    const auto pose = OVRTrackedDevicePoseToPose(trackedPose);
+
+    REQUIRE(pose.has_value());
+    CHECK(pose->position.x == doctest::Approx(-1.0));
+    CHECK(pose->position.y == doctest::Approx(2.0));
+    CHECK(pose->position.z == doctest::Approx(-3.0));
+    // q and -q represent the same rotation; OpenCV may choose either sign.
+    CHECK(std::abs(pose->rotation.w) == doctest::Approx(1.0));
+    CHECK(pose->rotation.x == doctest::Approx(0.0));
+    CHECK(pose->rotation.y == doctest::Approx(0.0));
+    CHECK(pose->rotation.z == doctest::Approx(0.0));
+}
+
+TEST_CASE("OpenVR tracked HMD pose rejects unavailable and degraded tracking")
+{
+    vr::TrackedDevicePose_t trackedPose{};
+    trackedPose.eTrackingResult = vr::TrackingResult_Running_OK;
+    trackedPose.bPoseIsValid = true;
+    trackedPose.bDeviceIsConnected = false;
+    CHECK_NOT(OVRTrackedDevicePoseToPose(trackedPose).has_value());
+
+    trackedPose.bDeviceIsConnected = true;
+    trackedPose.bPoseIsValid = false;
+    CHECK_NOT(OVRTrackedDevicePoseToPose(trackedPose).has_value());
+
+    trackedPose.bPoseIsValid = true;
+    trackedPose.eTrackingResult = vr::TrackingResult_Running_OutOfRange;
+    CHECK_NOT(OVRTrackedDevicePoseToPose(trackedPose).has_value());
+}
+
+TEST_CASE("MockOpenVRClient returns an injected HMD pose or an explicit invalid result")
+{
+    tracker::MockOpenVRClient client;
+    CHECK_NOT(client.IsInit());
+    client.Init();
+
+    CHECK(client.IsInit());
+    CHECK_NOT(client.GetHMDPose().has_value());
+
+    const Pose expected{{4.0, -5.0, 6.0}, {0.5, 0.5, -0.5, 0.5}};
+    client.SetHMDPose(expected);
+    const auto actual = client.GetHMDPose();
+    REQUIRE(actual.has_value());
+    CHECK(actual->position == expected.position);
+    CHECK(actual->rotation == expected.rotation);
+
+    client.SetHMDPose(std::nullopt);
+    CHECK_NOT(client.GetHMDPose().has_value());
 }
 
 } // namespace
@@ -148,6 +223,20 @@ Pose OpenVRClient::GetControllerPoseAction() const
         return OVRPoseMatrixToPose(*pose);
     }
     return Pose::Ident();
+}
+
+std::optional<Pose> OpenVRClient::GetHMDPose() const
+{
+    if (!mContext) throw std::runtime_error("openvr not initialized");
+
+    // PlayspaceCalib obtains controller poses in RawAndUncalibrated space. Use the
+    // same universe here so future HMD/controller calibration compares like-for-like
+    // poses without a SteamVR chaperone transform applied to only one input.
+    constexpr vr::ETrackingUniverseOrigin origin = vr::TrackingUniverseRawAndUncalibrated;
+    std::array<vr::TrackedDevicePose_t, vr::k_unTrackedDeviceIndex_Hmd + 1> trackedPoses{};
+    mContext->GetDeviceToAbsoluteTrackingPose(
+        origin, 0.0F, trackedPoses.data(), static_cast<uint32_t>(trackedPoses.size()));
+    return OVRTrackedDevicePoseToPose(trackedPoses[vr::k_unTrackedDeviceIndex_Hmd]);
 }
 
 } // namespace tracker

@@ -5,6 +5,9 @@
 #include <opencv2/core/types.hpp>
 #include <openvr.h>
 
+#include <optional>
+#include <utility>
+
 namespace tracker
 {
 
@@ -25,6 +28,11 @@ public:
     virtual void UpdateInputActions() const = 0;      /// call before GetXAction for this frame
     virtual ButtonAction GetButtonAction() const = 0; /// buttons are only active during the first frame they are pressed
     virtual Pose GetControllerPoseAction() const = 0;
+    /// HMD device-to-absolute pose in OpenVR's RawAndUncalibrated tracking universe,
+    /// converted to ATT's right-handed coordinate convention (-x right, +y up, +z forward).
+    /// Translation is measured in metres, as reported by OpenVR.
+    /// Returns nullopt while the HMD is disconnected or does not have a fully valid tracked pose.
+    virtual std::optional<Pose> GetHMDPose() const = 0;
     virtual bool IsInit() const = 0;
 };
 
@@ -43,6 +51,7 @@ public:
     void UpdateInputActions() const final;
     ButtonAction GetButtonAction() const final;
     Pose GetControllerPoseAction() const final;
+    std::optional<Pose> GetHMDPose() const final;
 
     bool IsInit() const final { return static_cast<bool>(mContext); }
 
@@ -57,6 +66,8 @@ private:
 class MockOpenVRClient final : public IVRClient
 {
 public:
+    MockOpenVRClient() { mHMDPose = std::nullopt; }
+
     bool CanInit() const final { return true; }
     void Init() final
     {
@@ -76,10 +87,17 @@ public:
         ATT_ASSERT(mIsInit);
         return Pose::Ident();
     }
+    std::optional<Pose> GetHMDPose() const final
+    {
+        ATT_ASSERT(mIsInit);
+        return mHMDPose;
+    }
+    void SetHMDPose(std::optional<Pose> pose) { mHMDPose = std::move(pose); }
     bool IsInit() const final { return mIsInit; }
 
 private:
     bool mIsInit = false;
+    std::optional<Pose> mHMDPose = std::nullopt;
 };
 
 } // namespace tracker
