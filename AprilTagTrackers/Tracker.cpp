@@ -39,24 +39,24 @@
 namespace
 {
 
+struct MarkerIdRange
+{
+    int begin;
+    int end;
+
+    bool Contains(int markerId) const
+    {
+        return markerId >= begin && markerId < end;
+    }
+
+    bool Overlaps(const MarkerIdRange& other) const
+    {
+        return begin < other.end && other.begin < end;
+    }
+};
+
 class TrackerMarkerIdPartition
 {
-    struct Range
-    {
-        int begin;
-        int end;
-
-        bool Contains(int markerId) const
-        {
-            return markerId >= begin && markerId < end;
-        }
-
-        bool Overlaps(const Range& other) const
-        {
-            return begin < other.end && other.begin < end;
-        }
-    };
-
 public:
     TrackerMarkerIdPartition(int trackerCount, int markersPerTracker, const cfg::List<cfg::TrackerUnit>& trackerConfigs)
         : mTrackerCount(std::max(0, trackerCount)), mMarkersPerTracker(markersPerTracker)
@@ -84,6 +84,12 @@ public:
         return markerId == MainMarkerId(trackerIndex);
     }
 
+    bool Overlaps(const MarkerIdRange& range) const
+    {
+        return std::ranges::any_of(mRanges, [&](const MarkerIdRange& trackerRange)
+                                   { return trackerRange.Overlaps(range); });
+    }
+
     void EnsureContainsAll(int trackerIndex, const std::vector<int>& markerIds) const
     {
         for (const int markerId : markerIds)
@@ -94,7 +100,7 @@ public:
     }
 
 private:
-    const Range& GetRange(int trackerIndex) const
+    const MarkerIdRange& GetRange(int trackerIndex) const
     {
         return mRanges.at(static_cast<std::size_t>(trackerIndex));
     }
@@ -132,8 +138,23 @@ private:
 
     int mTrackerCount;
     int mMarkersPerTracker;
-    std::vector<Range> mRanges;
+    std::vector<MarkerIdRange> mRanges;
 };
+
+std::optional<MarkerIdRange> ResolveReferenceMarkerRange(
+    const cfg::ReferenceMarker& config,
+    const TrackerMarkerIdPartition& trackerRanges)
+{
+    if (!config.enabled) return std::nullopt;
+
+    const MarkerIdRange range{config.markerIdBegin, config.markerIdEnd};
+    if (range.begin < 0 || range.end <= range.begin || trackerRanges.Overlaps(range))
+    {
+        ATT_LOG_ERROR("Invalid or overlapping reference marker ID range; reference marker disabled.");
+        return std::nullopt;
+    }
+    return range;
+}
 
 } // namespace
 
@@ -827,6 +848,7 @@ void Tracker::CalibrateTracker()
 
     const Index trackerNum = user_config.trackerNum;
     const TrackerMarkerIdPartition markerIds{static_cast<int>(trackerNum), user_config.markersPerTracker, user_config.trackers};
+    const auto referenceMarkerRange = ResolveReferenceMarkerRange(user_config.referenceMarker, markerIds);
     const double markerSize = user_config.markerSize * 0.01; // centimeters to meters
 
     const MarkerCorners3f modelMarker = tracker::TrackerUnit::CreateModelMarker(markerSize);
@@ -843,6 +865,14 @@ void Tracker::CalibrateTracker()
         // it should be easy to detect if two markers are moving together, and separate from one not moving in the background
         const int id = markerIds.MainMarkerId(i);
         unit.AddMarker(id, modelMarker);
+        trackerUnits.push_back(std::move(unit));
+    }
+    // The reference board uses the same calibration target and loop as trackers,
+    // but its explicitly configured range is never added to the tracker partition.
+    if (referenceMarkerRange)
+    {
+        tracker::TrackerUnit unit;
+        unit.AddMarker(referenceMarkerRange->begin, modelMarker);
         trackerUnits.push_back(std::move(unit));
     }
 
@@ -869,9 +899,11 @@ void Tracker::CalibrateTracker()
         const double maxDist = user_config.trackerCalibDistance;
 
         // Tracker roles come from config and are independent of this marker-ID partition.
-        for (int trackerIndex = 0; trackerIndex < trackerNum; ++trackerIndex)
+        // An optional final target is the reference board and follows this exact same path.
+        for (Index targetIndex = 0; targetIndex < static_cast<Index>(trackerUnits.size()); ++targetIndex)
         {
-            auto& unit = trackerUnits[trackerIndex];
+            const bool isReferenceMarker = targetIndex == trackerNum;
+            auto& unit = trackerUnits[targetIndex];
             // on weird images or calibrations, throws exception. This should usually only happen on bad camera calibrations, or in very rare cases
             auto [boardPose, estimated] = math::EstimatePoseTracker(dets.corners, dets.ids, unit.GetArucoBoard(), *camCalib);
             if (estimated == 0) continue; // no existing markers in this tracker were detected, can't add new ones to it
@@ -886,7 +918,10 @@ void Tracker::CalibrateTracker()
                 const RodrPose detMarkerPose{markerPoses.positions[detIndex], math::RodriguesVec3d(markerPoses.rotations[detIndex])};
 
                 // If the marker is not part of the current tracker, continue to the next detection.
-                if (!markerIds.Contains(trackerIndex, detId))
+                const bool isInTargetRange = isReferenceMarker
+                                                 ? referenceMarkerRange->Contains(detId)
+                                                 : markerIds.Contains(static_cast<int>(targetIndex), detId);
+                if (!isInTargetRange)
                 {
                     continue;
                 }
@@ -897,7 +932,10 @@ void Tracker::CalibrateTracker()
                     DrawMarker(frame.image, detCorners, COLOR_MARKER_ADDED);
                     continue;
                 }
-                ATT_ASSERT(!markerIds.IsMainMarker(trackerIndex, detId), "main marker already added");
+                const bool isMainMarker = isReferenceMarker
+                                              ? detId == referenceMarkerRange->begin
+                                              : markerIds.IsMainMarker(static_cast<int>(targetIndex), detId);
+                ATT_ASSERT(!isMainMarker, "main marker already added");
 
                 // if marker is too far away from camera, paint it purple, as adding it could have too much error
                 if (Length(detMarkerPose.position) > maxDist)
@@ -947,14 +985,23 @@ void Tracker::CalibrateTracker()
 
     if (promptSaveCalib)
     {
-        SaveTrackerUnitsToCalib(trackerUnits);
+        if (referenceMarkerRange)
+        {
+            const auto& referenceMarker = trackerUnits.at(static_cast<std::size_t>(trackerNum));
+            calib_config.referenceMarker.ids = referenceMarker.GetIds();
+            calib_config.referenceMarker.corners = referenceMarker.GetMarkers();
+        }
+        SaveTrackerUnitsToCalib(trackerUnits, trackerNum);
         SetTrackerUnitsFromConfig();
     }
 }
 
 void Tracker::MainLoop()
 {
-    tracker::MainLoopRunner runner(&user_config, &calib_config, &mPlayspace, &mVRDriver.value());
+    OptRefPtr<const tracker::TrackerUnit> referenceMarker;
+    if (mReferenceMarkerUnit) referenceMarker = &*mReferenceMarkerUnit;
+    tracker::MainLoopRunner runner(
+        &user_config, &calib_config, &mPlayspace, &mVRDriver.value(), referenceMarker);
 
     // run detection until camera is stopped or the start/stop button is pressed again
     while (mainThreadRunning && cameraRunning)
@@ -988,8 +1035,6 @@ void EnsureTrackersConfigSize(UserConfig& userConfig, CalibrationConfig& calibCo
 void Tracker::SetTrackerUnitsFromConfig()
 {
     EnsureTrackersConfigSize(user_config, calib_config);
-    if (user_config.trackers.GetSize() == 0) return; // not calibrated yet
-
     const TrackerMarkerIdPartition markerIds{static_cast<int>(user_config.trackers.GetSize()), user_config.markersPerTracker, user_config.trackers};
     mTrackerUnits.resize(user_config.trackers.GetSize());
     for (Index i = 0; i < static_cast<Index>(mTrackerUnits.size()); ++i)
@@ -1002,12 +1047,35 @@ void Tracker::SetTrackerUnitsFromConfig()
         if (user_config.trackerCalibCenters) unit.RecenterMarkers();
         unit.SetRole(config->role);
     }
+
+    mReferenceMarkerUnit.reset();
+    const auto referenceMarkerRange = ResolveReferenceMarkerRange(user_config.referenceMarker, markerIds);
+    if (!referenceMarkerRange) return;
+
+    try
+    {
+        if (calib_config.referenceMarker.ids.size() < 2)
+            throw utils::MakeError("reference marker board requires at least two calibrated markers");
+        for (const int markerId : calib_config.referenceMarker.ids)
+        {
+            if (!referenceMarkerRange->Contains(markerId))
+                throw utils::MakeError("marker ID ", markerId, " is outside configured reference marker range");
+        }
+        tracker::TrackerUnit referenceMarker;
+        referenceMarker.SetMarkers(calib_config.referenceMarker.ids, calib_config.referenceMarker.corners);
+        mReferenceMarkerUnit = std::move(referenceMarker);
+    }
+    catch (const std::exception& e)
+    {
+        ATT_LOG_ERROR("Invalid reference marker calibration; reference marker disabled: ", e.what());
+        mReferenceMarkerUnit.reset();
+    }
 }
 
-void Tracker::SaveTrackerUnitsToCalib(const std::vector<tracker::TrackerUnit>& trackerUnits)
+void Tracker::SaveTrackerUnitsToCalib(const std::vector<tracker::TrackerUnit>& trackerUnits, Index trackerCount)
 {
-    calib_config.trackers.Resize(trackerUnits.size());
-    for (Index i = 0; i < static_cast<Index>(trackerUnits.size()); ++i)
+    calib_config.trackers.Resize(trackerCount);
+    for (Index i = 0; i < trackerCount; ++i)
     {
         calib_config.trackers[i]->ids = trackerUnits[i].GetIds();
         calib_config.trackers[i]->corners = trackerUnits[i].GetMarkers();
@@ -1152,6 +1220,83 @@ TEST_CASE("Existing tracker config without marker ID ranges uses defaults")
     CHECK(markerIds.Contains(2, 34));
     CHECK(markerIds.Contains(2, 50));
     CHECK(!markerIds.Contains(2, 51));
+}
+
+TEST_CASE("Existing user config without a reference marker keeps it disabled")
+{
+    const std::string yaml = "%YAML:1.0\n---\ntrackerNum: 3\nmarkersPerTracker: 17\n";
+    cv::FileStorage storage{yaml, cv::FileStorage::READ | cv::FileStorage::MEMORY};
+    UserConfig config;
+    serial::FileStorageReader reader{storage.root()};
+    reader.Read(config);
+
+    CHECK_NOT(config.referenceMarker.enabled);
+    CHECK(config.referenceMarker.markerIdBegin == -1);
+    CHECK(config.referenceMarker.markerIdEnd == -1);
+}
+
+TEST_CASE("Valid explicit reference marker range is read without changing tracker ranges")
+{
+    const std::string yaml =
+        "%YAML:1.0\n---\nmarkersPerTracker: 17\n"
+        "referenceMarker: { enabled: 1, markerIdBegin: 100, markerIdEnd: 110 }\n";
+    cv::FileStorage storage{yaml, cv::FileStorage::READ | cv::FileStorage::MEMORY};
+    UserConfig config;
+    serial::FileStorageReader reader{storage.root()};
+    reader.Read(config);
+
+    const TrackerMarkerIdPartition markerIds{3, config.markersPerTracker, config.trackers};
+    const auto referenceRange = ResolveReferenceMarkerRange(config.referenceMarker, markerIds);
+
+    REQUIRE(referenceRange.has_value());
+    CHECK(referenceRange->begin == 100);
+    CHECK(referenceRange->end == 110);
+    CHECK(markerIds.MainMarkerId(0) == 0);
+    CHECK(markerIds.MainMarkerId(1) == 17);
+    CHECK(markerIds.MainMarkerId(2) == 34);
+}
+
+TEST_CASE("Invalid reference marker ranges disable only the reference marker")
+{
+    const cfg::List<cfg::TrackerUnit> trackerConfigs{3};
+    const TrackerMarkerIdPartition markerIds{3, 45, trackerConfigs};
+    cfg::ReferenceMarker referenceConfig;
+    referenceConfig.enabled = true;
+
+    const auto isAccepted = [&](int begin, int end)
+    {
+        referenceConfig.markerIdBegin = begin;
+        referenceConfig.markerIdEnd = end;
+        return ResolveReferenceMarkerRange(referenceConfig, markerIds).has_value();
+    };
+
+    CHECK_NOT(isAccepted(-1, 10));
+    CHECK_NOT(isAccepted(200, 200));
+    CHECK_NOT(isAccepted(201, 200));
+    CHECK_NOT(isAccepted(44, 50));
+
+    // Reference validation is atomic and never rewrites the tracker partition.
+    CHECK(markerIds.MainMarkerId(0) == 0);
+    CHECK(markerIds.MainMarkerId(1) == 45);
+    CHECK(markerIds.MainMarkerId(2) == 90);
+    CHECK(markerIds.Contains(0, 44));
+    CHECK(markerIds.Contains(1, 45));
+}
+
+TEST_CASE("Missing reference marker detections return no pose")
+{
+    tracker::TrackerUnit referenceMarker;
+    const MarkerCorners3f firstMarker = tracker::TrackerUnit::CreateModelMarker(0.1);
+    MarkerCorners3f secondMarker = firstMarker;
+    for (auto& corner : secondMarker) corner.x += 0.2F;
+    referenceMarker.SetMarkers({200, 201}, {firstMarker, secondMarker});
+    const MarkerDetectionList detections;
+    const cfg::CameraCalib camera;
+
+    const auto pose = tracker::EstimateReferenceMarkerPose(
+        detections, referenceMarker.GetArucoBoard(), camera);
+
+    CHECK_NOT(pose.has_value());
 }
 
 TEST_CASE("Existing user config keeps the default preview image size")

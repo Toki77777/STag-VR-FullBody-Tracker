@@ -27,6 +27,7 @@ public:
     REFLECTABLE_BEGIN;
     REFLECTABLE_FIELD(cfg::List<cfg::CameraCalib>, cameras){1};
     REFLECTABLE_FIELD(cfg::List<cfg::TrackerUnitCalib>, trackers){3};
+    REFLECTABLE_FIELD(cfg::TrackerUnitCalib, referenceMarker){};
     REFLECTABLE_END;
 };
 
@@ -70,6 +71,7 @@ public:
     REFLECTABLE_FIELD(bool, disableOpenVrApi) = false;
     REFLECTABLE_FIELD(cfg::List<cfg::VideoStream>, videoStreams){1};
     REFLECTABLE_FIELD(cfg::List<cfg::TrackerUnit>, trackers){3};
+    REFLECTABLE_FIELD(cfg::ReferenceMarker, referenceMarker){};
     REFLECTABLE_END;
 
     CalibrationConfig calib{};

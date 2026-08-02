@@ -69,7 +69,7 @@ private:
     bool TryInitializeVRClient();
 
     void SetTrackerUnitsFromConfig();
-    void SaveTrackerUnitsToCalib(const std::vector<tracker::TrackerUnit>&);
+    void SaveTrackerUnitsToCalib(const std::vector<tracker::TrackerUnit>&, Index trackerCount);
     bool IsTrackerUnitsCalibrated() const
     {
         return std::all_of(mTrackerUnits.begin(), mTrackerUnits.end(),
@@ -123,4 +123,5 @@ private:
     std::optional<tracker::VRDriver> mVRDriver{};
 
     std::vector<tracker::TrackerUnit> mTrackerUnits;
+    std::optional<tracker::TrackerUnit> mReferenceMarkerUnit;
 };

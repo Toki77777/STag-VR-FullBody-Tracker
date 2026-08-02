@@ -11,8 +11,21 @@
 
 #include <opencv2/objdetect/aruco_detector.hpp>
 
+#include <optional>
+
 namespace tracker
 {
+
+inline std::optional<RodrPose> EstimateReferenceMarkerPose(
+    const MarkerDetectionList& detections,
+    const ArucoBoardSharedPtr& board,
+    const cfg::CameraCalib& camera)
+{
+    auto [pose, numEstimated] = math::EstimatePoseTracker(
+        detections.corners, detections.ids, board, camera);
+    if (numEstimated <= 0) return std::nullopt;
+    return pose;
+}
 
 class MainLoopRunner
 {
@@ -22,18 +35,25 @@ public:
     explicit MainLoopRunner(RefPtr<UserConfig> config,
                             RefPtr<const CalibrationConfig> calibConfig,
                             RefPtr<PlayspaceCalib> playspace,
-                            RefPtr<VRDriver> vrDriver)
+                            RefPtr<VRDriver> vrDriver,
+                            OptRefPtr<const TrackerUnit> referenceMarker = {})
         : mConfig(config),
           camCalib(calibConfig->cameras[0]),
           videoStream(mConfig->videoStreams[0]),
           stagDetector(StagWrapper::ConvertLibrary(mConfig->markerLibrary), videoStream->quadDecimate),
           trackerNum(mConfig->trackerNum),
           mPlayspace(playspace),
-          mVRDriver(vrDriver)
+          mVRDriver(vrDriver),
+          mReferenceMarker(referenceMarker)
     {
         mPlayspace->Set(mConfig->manualCalib.GetAsReal());
         // calculate position of camera from calibration data and send its position to steamvr
         mVRDriver->UpdateStation(mPlayspace->GetStationPoseOVR());
+    }
+
+    std::optional<RodrPose> GetReferenceMarkerPose() const
+    {
+        return mReferenceMarkerPose;
     }
 
     void Update(RefPtr<AwaitedFrame> cameraFrame,
@@ -144,7 +164,9 @@ public:
         }
 
         // using copyTo with masking creates the image where everything but the locations where trackers are predicted to be is black
-        if (atleastOneTrackerVisible)
+        // A reference board can be anywhere in the frame, so its opt-in detection
+        // must not use tracker-only search masks. Disabled mode remains unchanged.
+        if (atleastOneTrackerVisible && !mReferenceMarker)
         {
             grayImg.copyTo(tempGrayMaskedImg, maskSearchImg);
             grayImg = tempGrayMaskedImg;
@@ -153,6 +175,15 @@ public:
         mCalibrator.Update(vrClient, mVRDriver, gui, mPlayspace, trackerCtrl->lockHeightCalib, trackerCtrl->manualRecalibrate);
 
         stagDetector.DetectMarkers(grayImg, dets);
+        if (mReferenceMarker)
+        {
+            mReferenceMarkerPose = EstimateReferenceMarkerPose(
+                dets, mReferenceMarker->GetArucoBoard(), *camCalib);
+        }
+        else
+        {
+            mReferenceMarkerPose.reset();
+        }
         // frame time is how much time passed since frame was acquired.
         const double frameTimeAfterDetect = duration_cast<utils::FSeconds>(utils::SteadyTimer::Now() - frame.timestamp).count();
         for (int index = 0; index < trackerUnits->size(); ++index)
@@ -269,6 +300,8 @@ private:
     Index trackerNum;
     RefPtr<PlayspaceCalib> mPlayspace;
     RefPtr<VRDriver> mVRDriver;
+    OptRefPtr<const TrackerUnit> mReferenceMarker;
+    std::optional<RodrPose> mReferenceMarkerPose = std::nullopt;
 
     MarkerDetectionList dets{};
 

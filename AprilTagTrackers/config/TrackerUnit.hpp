@@ -38,6 +38,16 @@ struct TrackerUnitCalib
     REFLECTABLE_END;
 };
 
+struct ReferenceMarker
+{
+    REFLECTABLE_BEGIN;
+    REFLECTABLE_FIELD(bool, enabled) = false;
+    ATT_SERIAL_COMMENT("Required marker ID range [begin, end) when enabled; no implicit range is assigned");
+    REFLECTABLE_FIELD(int, markerIdBegin) = -1;
+    REFLECTABLE_FIELD(int, markerIdEnd) = -1;
+    REFLECTABLE_END;
+};
+
 } // namespace cfg
 
 template <>
