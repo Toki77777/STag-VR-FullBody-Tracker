@@ -10,7 +10,6 @@
 #include "utils/Env.hpp"
 
 #include <opencv2/core.hpp>
-#include <opencv2/objdetect/aruco_detector.hpp>
 
 #include <string>
 #include <vector>
@@ -44,13 +43,15 @@ public:
     REFLECTABLE_FIELD(std::string, langCode) = "en";
     REFLECTABLE_FIELD(int, trackerNum) = 3;
     REFLECTABLE_FIELD(cfg::Validated<double>, markerSize){9.3, cfg::GreaterEqual(0.01)};
+    // Legacy compatibility: ebd8c5e disabled its median filter and f77d85f removed the reader; retained pending a future decision.
     REFLECTABLE_FIELD(int, numOfPrevValues) = 5;
     REFLECTABLE_FIELD(bool, usePredictive) = true;
-    REFLECTABLE_FIELD(bool, ignoreTracker0) = false;
+    // Legacy compatibility: e79c6c5 intentionally folded this choice into markerLibrary; retained pending a future decision.
     REFLECTABLE_FIELD(bool, coloredMarkers) = true;
     REFLECTABLE_FIELD(cfg::ManualCalib, manualCalib){};
     REFLECTABLE_FIELD(bool, chessboardCalib) = false;
     REFLECTABLE_FIELD(cfg::Validated<double>, smoothingFactor){0.5, cfg::Clamp(0.0, 1.0)};
+    // Legacy compatibility: e79c6c5 intentionally folded this choice into markerLibrary; retained pending a future decision.
     REFLECTABLE_FIELD(bool, circularMarkers) = false;
     REFLECTABLE_FIELD(cfg::Validated<double>, trackerCalibDistance){0.5, cfg::GreaterEqual(0.5)};
     /// TODO: change to not validated, gets set during calibration, to indicate if the user has done calibration
@@ -58,31 +59,18 @@ public:
     REFLECTABLE_FIELD(bool, trackerCalibCenters) = false;
     REFLECTABLE_FIELD(cfg::Validated<double>, depthSmoothing){0, cfg::Clamp(0.0, 1.0)};
     REFLECTABLE_FIELD(float, additionalSmoothing) = 0;
+    ATT_SERIAL_COMMENT("Maximum preview image dimension in pixels");
+    REFLECTABLE_FIELD(cfg::Validated<int>, previewImageSize){480, cfg::GreaterEqual(1)};
     ATT_SERIAL_COMMENT("STag marker library: 0=HD11, 1=HD13, 2=HD15, 3=HD17, 4=HD19, 5=HD21, 6=HD23");
     REFLECTABLE_FIELD(int, markerLibrary) = 0;
-    /// TODO: if (value <= 0) value = 45;
-    REFLECTABLE_FIELD(cfg::Validated<int>, markersPerTracker){45, cfg::GreaterEqual(1)};
+    REFLECTABLE_FIELD(cfg::Validated<int>, markersPerTracker){45, [](int& value)
+                                                              {
+                                                                  if (value <= 0) value = 45;
+                                                              }};
     REFLECTABLE_FIELD(bool, disableOpenVrApi) = false;
     REFLECTABLE_FIELD(cfg::List<cfg::VideoStream>, videoStreams){1};
     REFLECTABLE_FIELD(cfg::List<cfg::TrackerUnit>, trackers){3};
     REFLECTABLE_END;
 
     CalibrationConfig calib{};
-};
-
-class ArucoConfig : public serial::Serializable<ArucoConfig>
-{
-public:
-    // cv::aruco::DetectorParameters is a plain value type since OpenCV 4.7
-    using Params = cv::aruco::DetectorParameters;
-
-    ArucoConfig() : Serializable(utils::GetConfigDir() / "aruco.yaml")
-    {
-        params.detectInvertedMarker = true;
-        params.cornerRefinementMethod = cv::aruco::CORNER_REFINE_CONTOUR;
-    }
-
-    REFLECTABLE_BEGIN;
-    REFLECTABLE_FIELD(Params, params);
-    REFLECTABLE_END;
 };

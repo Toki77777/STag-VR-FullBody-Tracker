@@ -1,6 +1,80 @@
 #include "Helpers.hpp"
 
+#include "math/CVHelpers.hpp"
+#include "utils/Test.hpp"
 #include "utils/Types.hpp"
+
+namespace
+{
+
+TEST_CASE("EulerAnglesToRotationMatrix returns known rotations")
+{
+    const cv::Matx33d identity = EulerAnglesToRotationMatrix(cv::Vec3d::all(0));
+    const cv::Matx33d expectedIdentity = cv::Matx33d::eye();
+    for (int row = 0; row < 3; ++row)
+    {
+        for (int column = 0; column < 3; ++column)
+        {
+            CAPTURE(row);
+            CAPTURE(column);
+            CHECK(identity(row, column) == doctest::Approx(expectedIdentity(row, column)).epsilon(1e-12));
+        }
+    }
+
+    const cv::Matx33d yaw90 = EulerAnglesToRotationMatrix(cv::Vec3d{0, PI / 2, 0});
+    const cv::Matx33d expectedYaw90{
+        0, 0, 1,
+        0, 1, 0,
+        -1, 0, 0};
+    for (int row = 0; row < 3; ++row)
+    {
+        for (int column = 0; column < 3; ++column)
+        {
+            CAPTURE(row);
+            CAPTURE(column);
+            CHECK(yaw90(row, column) == doctest::Approx(expectedYaw90(row, column)).epsilon(1e-12));
+        }
+    }
+}
+
+TEST_CASE("OpenVR coordinate transforms are reversible")
+{
+    cv::Vec3d vector{1, -2, 3};
+    CoordTransformOVR(vector);
+    CHECK((vector == cv::Vec3d{-1, -2, -3}));
+    CoordTransformOVR(vector);
+    CHECK((vector == cv::Vec3d{1, -2, 3}));
+
+    cv::Quatd quaternion{0.5, 0.1, -0.2, 0.3};
+    CoordTransformOVR(quaternion);
+    CHECK((quaternion == cv::Quatd{0.5, -0.1, -0.2, -0.3}));
+    CoordTransformOVR(quaternion);
+    CHECK((quaternion == cv::Quatd{0.5, 0.1, -0.2, 0.3}));
+}
+
+TEST_CASE("CV vector conversions preserve components and fill new dimensions")
+{
+    const cv::Vec3i input{1, 2, 3};
+    const cv::Vec4i expanded = math::ToVecOf<4>(input, 9);
+    CHECK((expanded == cv::Vec4i{1, 2, 3, 9}));
+
+    const cv::Vec2i truncated = math::ToVecOf<2>(input);
+    CHECK((truncated == cv::Vec2i{1, 2}));
+
+    const cv::Matx<int, 1, 3> row{1, 2, 3};
+    CHECK((math::ToVecOf<4>(row, 9) == cv::Vec4i{1, 2, 3, 9}));
+    CHECK((math::ToVecOf<2>(row) == cv::Vec2i{1, 2}));
+
+    const cv::Matx<int, 3, 1> column{1, 2, 3};
+    CHECK((math::ToVecOf<4>(column, 9) == cv::Vec4i{1, 2, 3, 9}));
+    CHECK((math::ToVecOf<2>(column) == cv::Vec2i{1, 2}));
+
+    CHECK((math::ToVec(cv::Point3d{4, 5, 6}) == cv::Vec3d{4, 5, 6}));
+    CHECK((math::ConstrainSize(cv::Size2i{1920, 1080}, 720) == cv::Size2i{1280, 720}));
+    CHECK((math::ConstrainSize(cv::Size2i{1080, 1920}, 720) == cv::Size2i{720, 1280}));
+}
+
+} // namespace
 
 void drawMarker(cv::Mat frame, std::vector<cv::Point2f> corners, cv::Scalar color)
 {

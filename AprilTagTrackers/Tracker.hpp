@@ -34,8 +34,6 @@ class PlayspaceCalibrator;
 
 class Tracker : public ITrackerControl
 {
-    static constexpr int DRAW_IMG_SIZE = 480;
-
     static inline const cv::Scalar COLOR_MARKER_DETECTED{0, 0, 255}; /// blue
     static inline const cv::Scalar COLOR_MARKER_ADDING{255, 0, 255}; /// yellow
     static inline const cv::Scalar COLOR_MARKER_ADDED{0, 255, 0}; /// green
@@ -48,7 +46,7 @@ public:
     Tracker(const Tracker&) = delete;
     Tracker(Tracker&&) = delete;
     /// config and locale references are expected to exceed lifetime of this instance
-    Tracker(UserConfig& _userConfig, CalibrationConfig& _calibConfig, ArucoConfig& _arucoConfig, const Localization& _lc);
+    Tracker(UserConfig& _userConfig, CalibrationConfig& _calibConfig, const Localization& _lc);
     void StartCamera(RefPtr<cfg::Camera> cam);
     void StartCamera() override;
     void StartCameraCalib() override;
@@ -67,6 +65,8 @@ private:
     void CalibrateCameraCharuco();
     void CalibrateTracker();
     void MainLoop();
+    bool TryCreateVRDriver();
+    bool TryInitializeVRClient();
 
     void SetTrackerUnitsFromConfig();
     void SaveTrackerUnitsToCalib(const std::vector<tracker::TrackerUnit>&);
@@ -112,7 +112,6 @@ private:
 
     UserConfig& user_config;
     CalibrationConfig& calib_config;
-    const ArucoConfig& aruco_config;
     const Localization& lc;
 
     std::thread cameraThread;

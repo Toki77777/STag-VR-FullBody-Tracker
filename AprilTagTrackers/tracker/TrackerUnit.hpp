@@ -7,6 +7,9 @@
 #include "utils/Error.hpp"
 #include "utils/Types.hpp"
 
+#include <cmath>
+#include <limits>
+#include <unordered_set>
 #include <vector>
 
 namespace tracker
@@ -42,13 +45,26 @@ class TrackerUnit
     static void EnsureCorners(const MarkerCorners3f& corners)
     {
         if (corners.size() != 4) throw utils::MakeError("expected 4 corners, got ", corners.size());
+
+        bool hasDistinctCorners = false;
+        for (const auto& corner : corners)
+        {
+            if (!std::isfinite(corner.x) || !std::isfinite(corner.y) || !std::isfinite(corner.z))
+                throw utils::MakeError("marker corners must contain only finite values");
+            if (cv::norm(corner - corners.front()) > std::numeric_limits<float>::epsilon())
+                hasDistinctCorners = true;
+        }
+        if (!hasDistinctCorners) throw utils::MakeError("marker corners must describe a non-zero marker");
     }
     static void EnsureMarkers(const IdsList& ids, const MarkersList& cornersList)
     {
         if (ids.size() != cornersList.size()) throw utils::MakeError("ids size ", ids.size(), " != cornersList size", cornersList.size());
-        for (const auto& corners : cornersList)
+        std::unordered_set<int> uniqueIds;
+        for (std::size_t index = 0; index < ids.size(); ++index)
         {
-            EnsureCorners(corners);
+            if (ids[index] < 0) throw utils::MakeError("marker ID must be non-negative, got ", ids[index]);
+            if (!uniqueIds.insert(ids[index]).second) throw utils::MakeError("duplicate marker ID ", ids[index]);
+            EnsureCorners(cornersList[index]);
         }
     }
 
@@ -88,16 +104,8 @@ public:
 
     bool HasMarkerId(int id) const { return std::find(GetIds().begin(), GetIds().end(), id) != GetIds().end(); }
     Index GetMarkerCount() { return mIds.size(); }
-    /// best tell for calibration is whether the corner offsets of markers have been set
-    /// so if they are all zero this could return a false positive
+    /// Calibration is present after SetMarkers validates non-empty meaningful marker data.
     bool IsCalibrated() const { return !mMarkers.empty(); }
-    /// more accurate and expensive check
-    bool EnsureIsCalibrated() const
-    {
-        // if (!IsCalibrated()) return false;
-        // TODO: check ids in range, and marker corners have some meaning, maybe as simple as not zero
-        utils::Unreachable();
-    }
 
     void SetWasVisibleLastFrame(bool isFound) { mIsFound = isFound; }
     void SetWasVisibleToDriverLastFrame(bool isFound) { mIsDriverFound = isFound; }

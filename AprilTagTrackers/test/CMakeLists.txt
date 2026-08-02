@@ -3,6 +3,11 @@ project(test CXX)
 
 # project output
 add_executable(test)
+add_custom_target(run_tests
+    COMMAND $<TARGET_FILE:test>
+    DEPENDS test
+    USES_TERMINAL
+)
 
 # ====== Source Files ======
 

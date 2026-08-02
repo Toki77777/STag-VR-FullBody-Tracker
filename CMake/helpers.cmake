@@ -223,7 +223,7 @@ function(att_target_enable_asan target)
             /fsanitize=address
         )
         target_compile_definitions(${target} PRIVATE
-            _DISABLE_VECTOR_ANNOTATION
+            _DISABLE_STL_ANNOTATION
         )
     else()
         target_compile_options(${target} PRIVATE

@@ -16,7 +16,6 @@ namespace tracker
 
 class MainLoopRunner
 {
-    static constexpr int DRAW_IMG_SIZE = 480; // TODO: make configurable (preview image scaler)
     static inline const cv::Scalar COLOR_MASK{255, 0, 0}; /// red
 
 public:
@@ -254,7 +253,7 @@ public:
         {
             // draw and display the detections
             if (!dets.ids.empty()) cv::aruco::drawDetectedMarkers(drawImg, dets.corners, dets.ids);
-            const cv::Size2i drawSize = ConstrainSize(GetMatSize(frame.image), DRAW_IMG_SIZE);
+            const cv::Size2i drawSize = ConstrainSize(GetMatSize(frame.image), mConfig->previewImageSize);
             cv::resize(drawImg, outImg, drawSize);
             cv::putText(outImg, std::to_string(frameTimeAfterDetect).substr(0, 5), cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 255, 255));
             gui->UpdatePreview(outImg);

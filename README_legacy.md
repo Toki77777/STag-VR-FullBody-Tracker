@@ -332,10 +332,6 @@ To increase performance, the algorithm only searches for trackers in a window ar
 
 The window is visualized with blue circles/boxes, based on the parameters. The tracker must be inside at least one window or it will not be tracked.
 
-#### Ignore tracker 0:
-
-This will cause tracker 0 to not be tracked. Use this if you want to replace the hip tracker with a vive puck/owotrack. Keep number of trackers at 3.
-
 #### Use previous position as guess:
 
 This parameters sets if, when estimating the 3d position of a detected tracker, the algorithm should use the previous position as a guess to help it or not. Should stay ticked unless you know what you are doing.

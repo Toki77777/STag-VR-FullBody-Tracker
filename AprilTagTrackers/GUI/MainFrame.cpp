@@ -193,9 +193,6 @@ void GUI::MainFrame::ValidateParams()
         ShowPopup(lc.PARAMS_NOTE_LATENCY_GREATER_SMOOTHING, PopupStyle::Warning);
     if (config.smoothingFactor > 1)
         ShowPopup(lc.PARAMS_NOTE_HIGH_SMOOTHING, PopupStyle::Warning);
-    if (config.ignoreTracker0 && config.trackerNum == 2)
-        ShowPopup(lc.PARAMS_NOTE_2TRACKERS_IGNORE0, PopupStyle::Warning);
-
     tracker->UpdateConfig();
     ShowPopup(lc.PARAMS_SAVED_MSG, PopupStyle::Info);
 }
@@ -248,7 +245,7 @@ void GUI::MainFrame::CreateCameraPage(RefPtr<wxNotebook> pages)
             {
                 tracker->Start();
             }})
-        .Add(Button{"Preview output", [this](auto&)
+        .Add(Button{lc.CAMERA_PREVIEW_OUTPUT, [this](auto&)
             {
                 SetPreviewVisible(true);
             }});
@@ -378,8 +375,6 @@ void GUI::MainFrame::CreateParamsPage(RefPtr<wxNotebook> pages)
             Choice{config.markerLibrary, markerLibraries}})
         .Add(Labeled{lc.PARAMS_TRACKER_NAME_USE_CENTERS, lc.PARAMS_TRACKER_TOOLTIP_USE_CENTERS,
             CheckBox{config.trackerCalibCenters}})
-        .Add(Labeled{lc.PARAMS_TRACKER_NAME_IGNORE_0, lc.PARAMS_TRACKER_TOOLTIP_IGNORE_0,
-            CheckBox{config.ignoreTracker0}})
         .PopSizer()
         .PopSizer()
         .PushStaticBoxSizer(lc.PARAMS_SMOOTHING)

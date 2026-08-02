@@ -8,8 +8,10 @@
 #include "tracker/MainLoopRunner.hpp"
 #include "tracker/TrackerUnit.hpp"
 #include "utils/Assert.hpp"
+#include "utils/Error.hpp"
 #include "utils/LogBatch.hpp"
 #include "utils/SteadyTimer.hpp"
+#include "utils/Test.hpp"
 #include "utils/Types.hpp"
 
 #include <opencv2/calib3d.hpp>
@@ -26,6 +28,7 @@
 #include <array>
 #include <exception>
 #include <iostream>
+#include <limits>
 #include <mutex>
 #include <random>
 #include <sstream>
@@ -33,9 +36,110 @@
 #include <system_error>
 #include <vector>
 
-Tracker::Tracker(UserConfig& _userConfig, CalibrationConfig& _calibConfig, ArucoConfig& _arucoConfig, const Localization& _lc)
+namespace
+{
+
+class TrackerMarkerIdPartition
+{
+    struct Range
+    {
+        int begin;
+        int end;
+
+        bool Contains(int markerId) const
+        {
+            return markerId >= begin && markerId < end;
+        }
+
+        bool Overlaps(const Range& other) const
+        {
+            return begin < other.end && other.begin < end;
+        }
+    };
+
+public:
+    TrackerMarkerIdPartition(int trackerCount, int markersPerTracker, const cfg::List<cfg::TrackerUnit>& trackerConfigs)
+        : mTrackerCount(std::max(0, trackerCount)), mMarkersPerTracker(markersPerTracker)
+    {
+        ResetToDefaults();
+        if (!TryApplyConfiguredRanges(trackerConfigs))
+        {
+            ATT_LOG_ERROR("Invalid or overlapping tracker marker ID ranges; using markersPerTracker defaults.");
+            ResetToDefaults();
+        }
+    }
+
+    int MainMarkerId(int trackerIndex) const
+    {
+        return GetRange(trackerIndex).begin;
+    }
+
+    bool Contains(int trackerIndex, int markerId) const
+    {
+        return GetRange(trackerIndex).Contains(markerId);
+    }
+
+    bool IsMainMarker(int trackerIndex, int markerId) const
+    {
+        return markerId == MainMarkerId(trackerIndex);
+    }
+
+    void EnsureContainsAll(int trackerIndex, const std::vector<int>& markerIds) const
+    {
+        for (const int markerId : markerIds)
+        {
+            if (!Contains(trackerIndex, markerId))
+                throw utils::MakeError("marker ID ", markerId, " is outside tracker ", trackerIndex, " configured range");
+        }
+    }
+
+private:
+    const Range& GetRange(int trackerIndex) const
+    {
+        return mRanges.at(static_cast<std::size_t>(trackerIndex));
+    }
+
+    void ResetToDefaults()
+    {
+        mRanges.clear();
+        mRanges.reserve(static_cast<std::size_t>(mTrackerCount));
+        for (int trackerIndex = 0; trackerIndex < mTrackerCount; ++trackerIndex)
+        {
+            mRanges.push_back({trackerIndex * mMarkersPerTracker, (trackerIndex + 1) * mMarkersPerTracker});
+        }
+    }
+
+    bool TryApplyConfiguredRanges(const cfg::List<cfg::TrackerUnit>& trackerConfigs)
+    {
+        for (int trackerIndex = 0; trackerIndex < mTrackerCount && trackerIndex < trackerConfigs.GetSize(); ++trackerIndex)
+        {
+            const auto config = trackerConfigs[trackerIndex];
+            const bool useDefault = config->markerIdBegin == -1 && config->markerIdEnd == -1;
+            if (useDefault) continue;
+            if (config->markerIdBegin < 0 || config->markerIdEnd <= config->markerIdBegin) return false;
+            mRanges[trackerIndex] = {config->markerIdBegin, config->markerIdEnd};
+        }
+
+        for (std::size_t lhs = 0; lhs < mRanges.size(); ++lhs)
+        {
+            for (std::size_t rhs = lhs + 1; rhs < mRanges.size(); ++rhs)
+            {
+                if (mRanges[lhs].Overlaps(mRanges[rhs])) return false;
+            }
+        }
+        return true;
+    }
+
+    int mTrackerCount;
+    int mMarkersPerTracker;
+    std::vector<Range> mRanges;
+};
+
+} // namespace
+
+Tracker::Tracker(UserConfig& _userConfig, CalibrationConfig& _calibConfig, const Localization& _lc)
     : mCapture(&_userConfig.videoStreams[0]->camera),
-      user_config(_userConfig), calib_config(_calibConfig), aruco_config(_arucoConfig), lc(_lc)
+      user_config(_userConfig), calib_config(_calibConfig), lc(_lc)
 {
     SetTrackerUnitsFromConfig();
     mPlayspace.Set(user_config.manualCalib.GetAsReal());
@@ -303,7 +407,7 @@ void Tracker::CalibrateCameraCharuco()
             cv::fillConvexPoly(drawImg, points.data(), points.size(), cv::Scalar::all(255));
         }
 
-        preview.Update(drawImg, DRAW_IMG_SIZE);
+        preview.Update(drawImg, user_config.previewImageSize);
 
         // if more than one second has passed since last calibration image, add current frame to calibration images
         // framesSinceLast++;
@@ -476,7 +580,7 @@ void Tracker::CalibrateCamera()
         mCameraFrame.Get(frame);
         cv::Mat& image = frame.image;
         cv::putText(image, std::to_string(i) + "/" + std::to_string(picNum), cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 255, 255));
-        const cv::Size2i drawSize = math::ConstrainSize(math::GetMatSize(image), DRAW_IMG_SIZE);
+        const cv::Size2i drawSize = math::ConstrainSize(math::GetMatSize(image), user_config.previewImageSize);
 
         framesSinceLast++;
         if (framesSinceLast > 50)
@@ -561,6 +665,13 @@ void Tracker::StartConnection()
         return;
     }
 
+    if (!TryCreateVRDriver()) return;
+    if (!TryInitializeVRClient()) return;
+    gui->SetStatus(true, StatusItem::Driver);
+}
+
+bool Tracker::TryCreateVRDriver()
+{
     try
     {
         mVRDriver = tracker::VRDriver{user_config.trackers};
@@ -571,7 +682,7 @@ void Tracker::StartConnection()
         gui->ShowPopup(lc.CONNECT_DRIVER_MISSMATCH_1 + e.found.ToString() + lc.CONNECT_DRIVER_MISSMATCH_2 + e.expected.ToString(), PopupStyle::Error);
         mVRDriver.reset();
         gui->SetStatus(false, StatusItem::Driver);
-        return;
+        return false;
     }
     catch (const std::system_error& e)
     {
@@ -579,7 +690,7 @@ void Tracker::StartConnection()
         gui->ShowPopup(lc.CONNECT_DRIVER_ERROR + std::to_string(e.code().value()), PopupStyle::Error);
         mVRDriver.reset();
         gui->SetStatus(false, StatusItem::Driver);
-        return;
+        return false;
     }
     catch (const std::exception& e)
     {
@@ -587,9 +698,14 @@ void Tracker::StartConnection()
         gui->ShowPopup(lc.CONNECT_SOMETHINGWRONG + (std::string(" ") + e.what()), PopupStyle::Error);
         mVRDriver.reset();
         gui->SetStatus(false, StatusItem::Driver);
-        return;
+        return false;
     }
 
+    return true;
+}
+
+bool Tracker::TryInitializeVRClient()
+{
     if (!user_config.disableOpenVrApi)
     {
         mVRClient = std::make_unique<tracker::OpenVRClient>();
@@ -604,7 +720,7 @@ void Tracker::StartConnection()
         mVRClient.reset();
         mVRDriver.reset();
         gui->SetStatus(false, StatusItem::Driver);
-        return;
+        return false;
     }
     try
     {
@@ -617,9 +733,10 @@ void Tracker::StartConnection()
         mVRClient.reset();
         mVRDriver.reset();
         gui->SetStatus(false, StatusItem::Driver);
-        return;
+        return false;
     }
-    gui->SetStatus(true, StatusItem::Driver);
+
+    return true;
 }
 
 void Tracker::Start()
@@ -709,7 +826,7 @@ void Tracker::CalibrateTracker()
     MarkerDetectionList dets{};
 
     const Index trackerNum = user_config.trackerNum;
-    const int markersPerTracker = user_config.markersPerTracker;
+    const TrackerMarkerIdPartition markerIds{static_cast<int>(trackerNum), user_config.markersPerTracker, user_config.trackers};
     const double markerSize = user_config.markerSize * 0.01; // centimeters to meters
 
     const MarkerCorners3f modelMarker = tracker::TrackerUnit::CreateModelMarker(markerSize);
@@ -724,7 +841,7 @@ void Tracker::CalibrateTracker()
         // TODO: dynamically pick the main marker, based on the first seen? need some gui to help as multiple marker tend to get detected in the background while calibrating.
         // might be helpful to draw the id of the marker on each detected, and then some gui to select which detected marker is the main, and which should be added to this one.
         // it should be easy to detect if two markers are moving together, and separate from one not moving in the background
-        const int id = i * user_config.markersPerTracker;
+        const int id = markerIds.MainMarkerId(i);
         unit.AddMarker(id, modelMarker);
         trackerUnits.push_back(std::move(unit));
     }
@@ -751,8 +868,7 @@ void Tracker::CalibrateTracker()
         ATT_ASSERT(markerPoses.rotations.size() == dets.ids.size());
         const double maxDist = user_config.trackerCalibDistance;
 
-        // TODO: stop using hardcoded tracker roles
-        /// 0 = waist, 1 = left foot, 2 = right foot
+        // Tracker roles come from config and are independent of this marker-ID partition.
         for (int trackerIndex = 0; trackerIndex < trackerNum; ++trackerIndex)
         {
             auto& unit = trackerUnits[trackerIndex];
@@ -769,8 +885,8 @@ void Tracker::CalibrateTracker()
                 const MarkerCorners2f& detCorners = dets.corners[detIndex];
                 const RodrPose detMarkerPose{markerPoses.positions[detIndex], math::RodriguesVec3d(markerPoses.rotations[detIndex])};
 
-                // if marker is part of current tracker (usualy, 0 is 0-44, 1 is 45-89 etc), if not, continue to next detection
-                if (detId < (trackerIndex * markersPerTracker) || detId >= ((trackerIndex + 1) * markersPerTracker))
+                // If the marker is not part of the current tracker, continue to the next detection.
+                if (!markerIds.Contains(trackerIndex, detId))
                 {
                     continue;
                 }
@@ -781,7 +897,7 @@ void Tracker::CalibrateTracker()
                     DrawMarker(frame.image, detCorners, COLOR_MARKER_ADDED);
                     continue;
                 }
-                ATT_ASSERT(detId % markersPerTracker != 0, "main marker already added");
+                ATT_ASSERT(!markerIds.IsMainMarker(trackerIndex, detId), "main marker already added");
 
                 // if marker is too far away from camera, paint it purple, as adding it could have too much error
                 if (Length(detMarkerPose.position) > maxDist)
@@ -809,7 +925,7 @@ void Tracker::CalibrateTracker()
             }
         }
 
-        if (preview.IsVisible()) preview.Update(frame.image, DRAW_IMG_SIZE);
+        if (preview.IsVisible()) preview.Update(frame.image, user_config.previewImageSize);
     };
 
     // run loop until we stop it
@@ -874,12 +990,14 @@ void Tracker::SetTrackerUnitsFromConfig()
     EnsureTrackersConfigSize(user_config, calib_config);
     if (user_config.trackers.GetSize() == 0) return; // not calibrated yet
 
+    const TrackerMarkerIdPartition markerIds{static_cast<int>(user_config.trackers.GetSize()), user_config.markersPerTracker, user_config.trackers};
     mTrackerUnits.resize(user_config.trackers.GetSize());
     for (Index i = 0; i < static_cast<Index>(mTrackerUnits.size()); ++i)
     {
         const auto config = user_config.trackers[i];
         const auto calib = calib_config.trackers[i];
         auto& unit = mTrackerUnits[i];
+        markerIds.EnsureContainsAll(static_cast<int>(i), calib->ids);
         unit.SetMarkers(calib->ids, calib->corners);
         if (user_config.trackerCalibCenters) unit.RecenterMarkers();
         unit.SetRole(config->role);
@@ -895,4 +1013,214 @@ void Tracker::SaveTrackerUnitsToCalib(const std::vector<tracker::TrackerUnit>& t
         calib_config.trackers[i]->corners = trackerUnits[i].GetMarkers();
     }
     calib_config.Save();
+}
+
+TEST_CASE("PlayspaceCalib applies a known translation")
+{
+    tracker::PlayspaceCalib playspace;
+    playspace.Set(cv::Vec3d{1, 2, 3}, cv::Vec3d::all(0), 2.0);
+
+    const cv::Point3d transformed = playspace.Transform(cv::Point3d{4, 5, 6});
+    CHECK(transformed.x == doctest::Approx(5.0));
+    CHECK(transformed.y == doctest::Approx(7.0));
+    CHECK(transformed.z == doctest::Approx(9.0));
+    CHECK(playspace.GetScale() == doctest::Approx(2.0));
+}
+
+TEST_CASE("Tracker marker IDs are partitioned into unchanged contiguous ranges")
+{
+    const cfg::List<cfg::TrackerUnit> trackerConfigs{3};
+    const TrackerMarkerIdPartition markerIds{3, 45, trackerConfigs};
+
+    CHECK(markerIds.MainMarkerId(0) == 0);
+    CHECK(markerIds.MainMarkerId(1) == 45);
+    CHECK(markerIds.MainMarkerId(2) == 90);
+
+    CHECK(markerIds.Contains(0, 0));
+    CHECK(markerIds.Contains(0, 44));
+    CHECK(!markerIds.Contains(0, 45));
+    CHECK(!markerIds.Contains(1, 44));
+    CHECK(markerIds.Contains(1, 45));
+    CHECK(markerIds.Contains(1, 89));
+    CHECK(!markerIds.Contains(1, 90));
+
+    CHECK(markerIds.IsMainMarker(0, 0));
+    CHECK(markerIds.IsMainMarker(1, 45));
+    CHECK(markerIds.IsMainMarker(2, 90));
+    CHECK(!markerIds.IsMainMarker(0, 1));
+    CHECK(!markerIds.IsMainMarker(0, 44));
+    CHECK(!markerIds.IsMainMarker(1, 46));
+}
+
+TEST_CASE("Tracker marker ID ranges support per-tracker overrides")
+{
+    cfg::List<cfg::TrackerUnit> trackerConfigs{3};
+    trackerConfigs[1]->markerIdBegin = 100;
+    trackerConfigs[1]->markerIdEnd = 110;
+    trackerConfigs[2]->markerIdBegin = 200;
+    trackerConfigs[2]->markerIdEnd = 220;
+    const TrackerMarkerIdPartition markerIds{3, 45, trackerConfigs};
+
+    CHECK(markerIds.MainMarkerId(0) == 0);
+    CHECK(markerIds.MainMarkerId(1) == 100);
+    CHECK(markerIds.MainMarkerId(2) == 200);
+    CHECK(markerIds.Contains(1, 109));
+    CHECK(!markerIds.Contains(1, 110));
+    CHECK(markerIds.IsMainMarker(2, 200));
+}
+
+TEST_CASE("Invalid tracker marker ID ranges fall back to all defaults")
+{
+    // empty range
+    {
+        cfg::List<cfg::TrackerUnit> trackerConfigs{3};
+        trackerConfigs[1]->markerIdBegin = 100;
+        trackerConfigs[1]->markerIdEnd = 100;
+        const TrackerMarkerIdPartition markerIds{3, 45, trackerConfigs};
+        CHECK(markerIds.MainMarkerId(1) == 45);
+        CHECK(markerIds.Contains(1, 89));
+    }
+
+    // overlap with a default range
+    {
+        cfg::List<cfg::TrackerUnit> trackerConfigs{3};
+        trackerConfigs[1]->markerIdBegin = 44;
+        trackerConfigs[1]->markerIdEnd = 60;
+        const TrackerMarkerIdPartition markerIds{3, 45, trackerConfigs};
+        CHECK(markerIds.MainMarkerId(1) == 45);
+        CHECK(markerIds.MainMarkerId(2) == 90);
+    }
+
+    // only one endpoint configured
+    {
+        cfg::List<cfg::TrackerUnit> trackerConfigs{3};
+        trackerConfigs[1]->markerIdBegin = 100;
+        const TrackerMarkerIdPartition markerIds{3, 45, trackerConfigs};
+        CHECK(markerIds.MainMarkerId(1) == 45);
+    }
+}
+
+TEST_CASE("Serialized tracker calibration IDs must stay inside their configured range")
+{
+    const cfg::List<cfg::TrackerUnit> trackerConfigs{2};
+    const TrackerMarkerIdPartition markerIds{2, 45, trackerConfigs};
+
+    DOCTEST_CHECK_NOTHROW(markerIds.EnsureContainsAll(0, {0, 44}));
+    DOCTEST_CHECK_NOTHROW(markerIds.EnsureContainsAll(1, {45, 89}));
+    DOCTEST_CHECK_THROWS_AS(markerIds.EnsureContainsAll(0, {45}), utils::Error);
+    DOCTEST_CHECK_THROWS_AS(markerIds.EnsureContainsAll(1, {-1}), utils::Error);
+}
+
+TEST_CASE("Serialized tracker calibration rejects malformed IDs and corners")
+{
+    tracker::TrackerUnit unit;
+    const MarkerCorners3f marker = tracker::TrackerUnit::CreateModelMarker(0.1);
+
+    DOCTEST_CHECK_NOTHROW(unit.SetMarkers({}, {}));
+    DOCTEST_CHECK_NOTHROW(unit.SetMarkers({0}, {marker}));
+    DOCTEST_CHECK_THROWS_AS(unit.SetMarkers({-1}, {marker}), utils::Error);
+    DOCTEST_CHECK_THROWS_AS(unit.SetMarkers({0, 0}, {marker, marker}), utils::Error);
+
+    MarkerCorners3f nonFiniteMarker = marker;
+    nonFiniteMarker[0].x = std::numeric_limits<float>::quiet_NaN();
+    DOCTEST_CHECK_THROWS_AS(unit.SetMarkers({0}, {nonFiniteMarker}), utils::Error);
+
+    const MarkerCorners3f zeroMarker(4, cv::Point3f{});
+    DOCTEST_CHECK_THROWS_AS(unit.SetMarkers({0}, {zeroMarker}), utils::Error);
+}
+
+TEST_CASE("Existing tracker config without marker ID ranges uses defaults")
+{
+    const std::string yaml = "%YAML:1.0\n---\nmarkersPerTracker: 17\ntrackers:\n  - { role: Waist }\n  - { role: LeftFoot }\n  - { role: RightFoot }\n";
+    cv::FileStorage storage{yaml, cv::FileStorage::READ | cv::FileStorage::MEMORY};
+    UserConfig config;
+    serial::FileStorageReader reader{storage.root()};
+    reader.Read(config);
+
+    CHECK(config.trackers[0]->markerIdBegin == -1);
+    CHECK(config.trackers[0]->markerIdEnd == -1);
+    const TrackerMarkerIdPartition markerIds{3, config.markersPerTracker, config.trackers};
+    CHECK(markerIds.MainMarkerId(0) == 0);
+    CHECK(markerIds.MainMarkerId(1) == 17);
+    CHECK(markerIds.MainMarkerId(2) == 34);
+    CHECK(markerIds.Contains(0, 0));
+    CHECK(markerIds.Contains(0, 16));
+    CHECK(!markerIds.Contains(0, 17));
+    CHECK(markerIds.Contains(1, 17));
+    CHECK(markerIds.Contains(1, 33));
+    CHECK(!markerIds.Contains(1, 34));
+    CHECK(markerIds.Contains(2, 34));
+    CHECK(markerIds.Contains(2, 50));
+    CHECK(!markerIds.Contains(2, 51));
+}
+
+TEST_CASE("Existing user config keeps the default preview image size")
+{
+    const std::string yaml = "%YAML:1.0\n---\ntrackerNum: 3\n";
+    cv::FileStorage storage{yaml, cv::FileStorage::READ | cv::FileStorage::MEMORY};
+    UserConfig config;
+    serial::FileStorageReader reader{storage.root()};
+    reader.Read(config);
+
+    CHECK(config.previewImageSize == 480);
+}
+
+TEST_CASE("Existing user config ignores the removed ignoreTracker0 key")
+{
+    const std::string yaml = "%YAML:1.0\n---\nignoreTracker0: 1\ntrackerNum: 7\nmarkerSize: 12.5\nmarkersPerTracker: 17\npreviewImageSize: 360\n";
+    cv::FileStorage storage{yaml, cv::FileStorage::READ | cv::FileStorage::MEMORY};
+    UserConfig config;
+    serial::FileStorageReader reader{storage.root()};
+    DOCTEST_CHECK_NOTHROW(reader.Read(config));
+
+    CHECK(config.trackerNum == 7);
+    CHECK(config.markerSize.Get() == doctest::Approx(12.5));
+    CHECK(config.markersPerTracker == 17);
+    CHECK(config.previewImageSize == 360);
+}
+
+TEST_CASE("markersPerTracker restores its legacy fallback without changing valid values")
+{
+    const auto readMarkersPerTracker = [](int value)
+    {
+        const std::string yaml = "%YAML:1.0\n---\nmarkersPerTracker: " + std::to_string(value) + "\n";
+        cv::FileStorage storage{yaml, cv::FileStorage::READ | cv::FileStorage::MEMORY};
+        UserConfig config;
+        serial::FileStorageReader reader{storage.root()};
+        reader.Read(config);
+        return config.markersPerTracker.Get();
+    };
+
+    CHECK(readMarkersPerTracker(-1) == 45);
+    CHECK(readMarkersPerTracker(0) == 45);
+    CHECK(readMarkersPerTracker(1) == 1);
+    CHECK(readMarkersPerTracker(45) == 45);
+    CHECK(readMarkersPerTracker(123) == 123);
+}
+
+TEST_CASE("PlayspaceCalib pose transforms round trip")
+{
+    tracker::PlayspaceCalib playspace;
+    playspace.Set(cv::Vec3d{1.5, -2.0, 0.75}, cv::Vec3d{0.2, -0.4, 0.1}, 1.25);
+    const Pose original{
+        cv::Point3d{4.0, -3.0, 2.0},
+        cv::Quatd::createFromRvec(cv::Vec3d{0.1, 0.3, -0.2})};
+
+    const Pose restored = playspace.InvTransform(playspace.Transform(original));
+    CHECK(restored.position.x == doctest::Approx(original.position.x).epsilon(1e-12));
+    CHECK(restored.position.y == doctest::Approx(original.position.y).epsilon(1e-12));
+    CHECK(restored.position.z == doctest::Approx(original.position.z).epsilon(1e-12));
+    CHECK(restored.rotation.w == doctest::Approx(original.rotation.w).epsilon(1e-12));
+    CHECK(restored.rotation.x == doctest::Approx(original.rotation.x).epsilon(1e-12));
+    CHECK(restored.rotation.y == doctest::Approx(original.rotation.y).epsilon(1e-12));
+    CHECK(restored.rotation.z == doctest::Approx(original.rotation.z).epsilon(1e-12));
+
+    const Pose restoredFromOVR = playspace.InvTransformFromOVR(playspace.TransformToOVR(original));
+    CHECK(restoredFromOVR.position.x == doctest::Approx(original.position.x).epsilon(1e-12));
+    CHECK(restoredFromOVR.position.y == doctest::Approx(original.position.y).epsilon(1e-12));
+    CHECK(restoredFromOVR.position.z == doctest::Approx(original.position.z).epsilon(1e-12));
+    CHECK(restoredFromOVR.rotation.w == doctest::Approx(original.rotation.w).epsilon(1e-12));
+    CHECK(restoredFromOVR.rotation.x == doctest::Approx(original.rotation.x).epsilon(1e-12));
+    CHECK(restoredFromOVR.rotation.y == doctest::Approx(original.rotation.y).epsilon(1e-12));
+    CHECK(restoredFromOVR.rotation.z == doctest::Approx(original.rotation.z).epsilon(1e-12));
 }

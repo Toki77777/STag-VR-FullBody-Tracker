@@ -1,11 +1,13 @@
 #include "StagWrapper.hpp"
 
 #include "utils/Assert.hpp"
+#include "utils/Test.hpp"
 
 #include <stag/Stag.h>
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 StagWrapper::StagWrapper(int libraryHD, double decimate)
     : mLibraryHD(libraryHD), mDecimate(std::max(decimate, 1.0))
@@ -35,6 +37,24 @@ void RefineCornersFullRes(const cv::Mat& frame, std::vector<MarkerCorners2f>& co
         if (!inside) continue;
         cv::cornerSubPix(frame, corners, cv::Size(winSize, winSize), cv::Size(-1, -1), criteria);
     }
+}
+
+TEST_CASE("StagWrapper::ConvertLibrary maps every supported library")
+{
+    constexpr std::array<int, 7> expected{11, 13, 15, 17, 19, 21, 23};
+    for (int index = 0; index < static_cast<int>(expected.size()); ++index)
+    {
+        CAPTURE(index);
+        CHECK(StagWrapper::ConvertLibrary(index) == expected[index]);
+    }
+}
+
+TEST_CASE("StagWrapper::ConvertLibrary falls back for invalid indices")
+{
+    CHECK(StagWrapper::ConvertLibrary(-1) == STAG_LIBRARY_HDS[0]);
+    CHECK(StagWrapper::ConvertLibrary(static_cast<int>(STAG_LIBRARY_HDS.size())) == STAG_LIBRARY_HDS[0]);
+    CHECK(StagWrapper::ConvertLibrary(std::numeric_limits<int>::min()) == STAG_LIBRARY_HDS[0]);
+    CHECK(StagWrapper::ConvertLibrary(std::numeric_limits<int>::max()) == STAG_LIBRARY_HDS[0]);
 }
 
 } // namespace

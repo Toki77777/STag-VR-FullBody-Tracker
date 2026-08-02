@@ -127,6 +127,7 @@ public:
     T(CAMERA_CONNECT) = "5. Connect to SteamVR";
     T(CAMERA_START_DETECTION) = "6. Start/Stop";
     T(CAMERA_PREVIEW_CAMERA) = "Preview camera";
+    T(CAMERA_PREVIEW_OUTPUT) = "Preview output";
     T(CAMERA_PREVIEW_CALIBRATION) = "Preview calibration";
     T(CAMERA_CALIBRATION_MODE) = "Calibration mode";
     T(CAMERA_MULTICAM_CALIB) = "Refine calibration using second camera";
@@ -181,8 +182,6 @@ Uncheck Calibration mode when done!)";
     T(PARAMS_TRACKER_TOOLTIP_MARKER_LIBRARY) = "Marker library to use. Leave at STag HD11 unless you know what you are doing.";
     T(PARAMS_TRACKER_NAME_USE_CENTERS) = "Use centers of trackers";
     T(PARAMS_TRACKER_TOOLTIP_USE_CENTERS) = "Experimental. Instead of having position of tracker detected at the main marker, it will be the center of all markers in the tracker.";
-    T(PARAMS_TRACKER_NAME_IGNORE_0) = "Ignore tracker 0";
-    T(PARAMS_TRACKER_TOOLTIP_IGNORE_0) = "If you want to replace the hip tracker with a vive tracker/owotrack, check this option. Keep number of trackers on 3.";
 
     T(PARAMS_SMOOTHING) = "SMOOTHING PARAMETERS";
     T(PARAMS_SMOOTHING_NAME_WINDOW) = "Smoothing time window";
@@ -202,7 +201,6 @@ Uncheck Calibration mode when done!)";
     T(PARAMS_NOTE_NO_DSHOW_CAMSETTINGS) = "NOTE: Camera settings parameter is on, but camera API preference is not 700 \n\nOpening camera parameters only work when camera API is set to DirectShow, or 700.";
     T(PARAMS_NOTE_LATENCY_GREATER_SMOOTHING) = "NOTE: Camera latency should never be higher than smoothing time window or tracking isnt going to work. \n\nYou probably dont want it any higher than 0.1, and smoothing window probably shouldnt be under 0.2 unless you use high speed cameras.";
     T(PARAMS_NOTE_HIGH_SMOOTHING) = "NOTE: Smoothing time window is over 1 second, which will cause very slow movement! \n\nYou probably want to update it to something like 0.5.";
-    T(PARAMS_NOTE_2TRACKERS_IGNORE0) = "Number of trackers is 2 and ignore tracker 0 is on. This will result in only 1 tracker spawning in SteamVR. \nIf you wish to use both feet trackers, keep number of trackers at 3.";
     T(PARAMS_NOTE_LANGUAGECHANGE) = "Language has been changed! Please restart application to apply.";
 
     T(PARAMS_SAVED_MSG) = "Parameters saved!";

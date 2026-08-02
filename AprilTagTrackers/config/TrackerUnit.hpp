@@ -1,6 +1,7 @@
 #pragma once
 
 #include "math/CVTypes.hpp"
+#include "serial/Comment.hpp"
 #include "serial/Serial.hpp"
 #include "utils/Enum.hpp"
 #include "utils/Reflectable.hpp"
@@ -23,6 +24,9 @@ struct TrackerUnit
 {
     REFLECTABLE_BEGIN;
     REFLECTABLE_FIELD(TrackerRole, role);
+    ATT_SERIAL_COMMENT("Marker ID range [begin, end); keep both at -1 to use markersPerTracker defaults");
+    REFLECTABLE_FIELD(int, markerIdBegin) = -1;
+    REFLECTABLE_FIELD(int, markerIdEnd) = -1;
     REFLECTABLE_END;
 };
 

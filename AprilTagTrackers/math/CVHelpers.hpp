@@ -7,6 +7,7 @@
 
 #include <opencv2/calib3d.hpp>
 
+#include <algorithm>
 #include <array>
 
 namespace math
@@ -105,31 +106,22 @@ inline cv::Size2i ConstrainSize(const cv::Size2i& size, const cv::Size2i& fillSi
 template <int NTo, typename T, int NFrom>
 inline cv::Vec<T, NTo> ToVecOf(const cv::Vec<T, NFrom>& vec, T fill = 0)
 {
-    cv::Vec<T, NTo> result{vec.val};
-    for (int i = NFrom; i < NTo; ++i)
-    {
-        result[i] = fill;
-    }
+    cv::Vec<T, NTo> result = cv::Vec<T, NTo>::all(fill);
+    std::copy_n(vec.val, std::min(NTo, NFrom), result.val);
     return result;
 }
 template <int NTo, typename T, int NFrom>
 inline cv::Vec<T, NTo> ToVecOf(const cv::Matx<T, 1, NFrom>& vec, T fill = 0)
 {
-    cv::Vec<T, NTo> result{vec.val};
-    for (int i = NFrom; i < NTo; ++i)
-    {
-        result[i] = fill;
-    }
+    cv::Vec<T, NTo> result = cv::Vec<T, NTo>::all(fill);
+    std::copy_n(vec.val, std::min(NTo, NFrom), result.val);
     return result;
 }
 template <int NTo, typename T, int NFrom>
 inline cv::Vec<T, NTo> ToVecOf(const cv::Matx<T, NFrom, 1>& vec, T fill = 0)
 {
-    cv::Vec<T, NTo> result{vec.val};
-    for (int i = NFrom; i < NTo; ++i)
-    {
-        result[i] = fill;
-    }
+    cv::Vec<T, NTo> result = cv::Vec<T, NTo>::all(fill);
+    std::copy_n(vec.val, std::min(NTo, NFrom), result.val);
     return result;
 }
 

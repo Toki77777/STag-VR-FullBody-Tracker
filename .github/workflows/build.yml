@@ -5,7 +5,7 @@ on:
     branches: [master]
     paths-ignore: ["**.md"]
   pull_request:
-    branches: [master]
+    branches: [master, claude/**]
     paths-ignore: ["**.md"]
 
 env:
@@ -91,6 +91,16 @@ jobs:
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
           -DATT_DEBUG=ON
 
+      - name: CMake Configure Tests
+        run: >
+          cmake -B build/test -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE="./vcpkg/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_INSTALLED_DIR="./build/vcpkg_installed"
+          -DENABLE_TESTING=ON
+          -DATT_ENABLE_DRIVER=OFF
+          -DATT_INSTALL_RESOURCES=OFF
+
       - name: CMake Build Release
         run: |
           cmake --build build/release --config Release --target install
@@ -98,6 +108,11 @@ jobs:
       - name: CMake Build Debug
         run: |
           cmake --build build/debug --config Debug --target install
+
+      - name: CMake Build and Run Tests
+        run: |
+          cmake --build build/test --config Release --target test
+          cmake --build build/test --config Release --target run_tests
 
       - name: Tar Artifacts (Linux)
         if: runner.os == 'Linux'
