@@ -72,6 +72,7 @@ public:
             ATT_LOG_ERROR("Invalid or overlapping tracker marker ID ranges; using markersPerTracker defaults.");
             ResetToDefaults();
         }
+        LogRanges();
     }
 
     int MainMarkerId(int trackerIndex) const
@@ -105,6 +106,21 @@ public:
     }
 
 private:
+    /// Which IDs each tracker will look for, and which one has to be seen first. Without this
+    /// a marker layout that does not match the config looks exactly like a detection failure.
+    void LogRanges() const
+    {
+        std::string ranges;
+        for (std::size_t index = 0; index < mRanges.size(); ++index)
+        {
+            if (index != 0) ranges += ", ";
+            ranges += std::to_string(index) + ": [" + std::to_string(mRanges[index].begin) +
+                      ", " + std::to_string(mRanges[index].end) + ") main " +
+                      std::to_string(mRanges[index].begin);
+        }
+        ATT_LOG_INFO("tracker marker IDs - ", ranges);
+    }
+
     const MarkerIdRange& GetRange(int trackerIndex) const
     {
         return mRanges.at(static_cast<std::size_t>(trackerIndex));
