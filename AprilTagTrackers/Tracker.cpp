@@ -18,6 +18,7 @@
 #include <opencv2/calib3d/calib3d.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/objdetect/aruco_detector.hpp>
 #include <opencv2/objdetect/charuco_detector.hpp>
@@ -940,6 +941,8 @@ void Tracker::CalibrateTracker()
     const RefPtr<cfg::CameraCalib> camCalib = calib_config.cameras[0];
     auto preview = gui->CreatePreviewControl();
     utils::SteadyTimer detectionLogTimer{};
+    int framesWithoutDetection = 0;
+    bool wroteDebugFrame = false;
 
     // TODO: temporary make code easier by allowing returns and handling exceptions properly within loop
     // will be refactored to another class, but easier than pulling out to another function due to amount of state
@@ -967,6 +970,26 @@ void Tracker::CalibrateTracker()
             ATT_LOG_INFO("tracker calibration: HD", StagWrapper::ConvertLibrary(user_config.markerLibrary),
                          ", image ", frame.image.cols, "x", frame.image.rows,
                          ", markers detected: ", detectedIds);
+        }
+
+        framesWithoutDetection = dets.ids.empty() ? framesWithoutDetection + 1 : 0;
+        // Detecting nothing for this long means the image itself has to be looked at. Focus,
+        // exposure, contrast and how many pixels the marker actually covers cannot be judged
+        // from the downscaled preview, so keep one full resolution frame next to the log.
+        constexpr int framesBeforeDebugFrame = 300;
+        if (!wroteDebugFrame && framesWithoutDetection > framesBeforeDebugFrame)
+        {
+            wroteDebugFrame = true;
+            const std::filesystem::path debugFramePath = utils::GetLogsDir() / "detect-debug.bmp";
+            if (cv::imwrite(debugFramePath.string(), grayImage))
+            {
+                ATT_LOG_INFO("no markers detected in ", framesWithoutDetection,
+                             " frames, wrote the detection image to ", debugFramePath);
+            }
+            else
+            {
+                ATT_LOG_ERROR("could not write the detection image to ", debugFramePath);
+            }
         }
 
         math::EstimatePoseSingleMarkers(dets.corners, markerSize, *camCalib, markerPoses);
