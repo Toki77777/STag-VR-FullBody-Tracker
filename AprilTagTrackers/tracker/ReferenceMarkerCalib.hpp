@@ -70,9 +70,11 @@ struct ReferenceMarkerCalibParams
     /// its last to its first singular value. Guards against a rank deficient fit, which
     /// reproduces its own samples perfectly and is wrong everywhere else.
     double minTranslationConditioning = 1e-3;
-    /// plausible range for the camera scale factor, cfg::ManualCalib clamps to [0.8, 1.2]
-    double minScale = 0.5;
-    double maxScale = 2.0;
+    /// accepted range for the camera scale factor. Matches the range cfg::ManualCalib clamps
+    /// to, so an accepted solution can be stored and read back unchanged. A camera whose
+    /// scale lands outside it needs its intrinsics calibrated again, not a playspace fit.
+    double minScale = 0.8;
+    double maxScale = 1.2;
     /// largest accepted RMS error, in meters, between predicted and reported HMD position
     double maxPositionResidual = 0.05;
     /// largest accepted error, in radians, between predicted and reported HMD orientation

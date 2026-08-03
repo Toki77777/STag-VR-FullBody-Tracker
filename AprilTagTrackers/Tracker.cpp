@@ -1233,6 +1233,52 @@ TEST_CASE("Existing user config without a reference marker keeps it disabled")
     CHECK_NOT(config.referenceMarker.enabled);
     CHECK(config.referenceMarker.markerIdBegin == -1);
     CHECK(config.referenceMarker.markerIdEnd == -1);
+    // the calibration settings added later must not change what an old config means
+    CHECK(config.referenceMarker.continuousCalibration);
+    CHECK_NOT(config.referenceMarker.recalibrateHmdOffset);
+}
+
+TEST_CASE("Existing calibration config without a stored board offset asks for it to be measured")
+{
+    const std::string yaml = "%YAML:1.0\n---\ncameras:\n  - { }\n";
+    cv::FileStorage storage{yaml, cv::FileStorage::READ | cv::FileStorage::MEMORY};
+    CalibrationConfig config;
+    serial::FileStorageReader reader{storage.root()};
+    reader.Read(config);
+
+    CHECK_NOT(config.referenceMarkerOffset.calibrated);
+    CHECK(config.referenceMarkerOffset.scale == doctest::Approx(1.0));
+    CHECK(cv::norm(config.referenceMarkerOffset.position) == doctest::Approx(0.0));
+    CHECK(cv::norm(config.referenceMarkerOffset.rotation) == doctest::Approx(0.0));
+}
+
+TEST_CASE("A stored board offset is read back as the pose it was solved as")
+{
+    const std::string yaml =
+        "%YAML:1.0\n---\n"
+        "referenceMarkerOffset: { calibrated: 1, position: [ 2.0000000000000001e-02, "
+        "6.0000000000000002e-02, -1.1e-01 ], rotation: [ 1.0e-01, -2.0e-01, 3.0e-01 ], "
+        "scale: 1.0200000000000000e+00 }\n";
+    cv::FileStorage storage{yaml, cv::FileStorage::READ | cv::FileStorage::MEMORY};
+    CalibrationConfig config;
+    serial::FileStorageReader reader{storage.root()};
+    reader.Read(config);
+
+    const auto& stored = config.referenceMarkerOffset;
+    REQUIRE(stored.calibrated);
+    CHECK(stored.position[X] == doctest::Approx(0.02));
+    CHECK(stored.position[Y] == doctest::Approx(0.06));
+    CHECK(stored.position[Z] == doctest::Approx(-0.11));
+    CHECK(stored.scale == doctest::Approx(1.02));
+
+    // this is how MainLoopRunner restores it, so an angle axis that does not survive the
+    // trip would silently move the whole playspace on the next session
+    const cv::Vec3d rotation{0.1, -0.2, 0.3};
+    const Pose offset{cv::Point3d(stored.position), cv::Quatd::createFromRvec(stored.rotation)};
+    const double rotationError = tracker::RotationAngleBetween(
+        offset.rotation, cv::Quatd::createFromRvec(rotation));
+    CAPTURE(rotationError);
+    CHECK(rotationError < 1e-9);
 }
 
 TEST_CASE("Valid explicit reference marker range is read without changing tracker ranges")

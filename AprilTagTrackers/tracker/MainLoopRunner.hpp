@@ -3,14 +3,17 @@
 #include "GUI.hpp"
 #include "OpenVRClient.hpp"
 #include "PlayspaceCalib.hpp"
+#include "ReferenceMarkerCalib.hpp"
 #include "RefPtr.hpp"
 #include "StagWrapper.hpp"
 #include "TrackerUnit.hpp"
+#include "utils/Log.hpp"
 #include "VideoCapture.hpp"
 #include "VRDriver.hpp"
 
 #include <opencv2/objdetect/aruco_detector.hpp>
 
+#include <array>
 #include <optional>
 
 namespace tracker
@@ -30,14 +33,16 @@ inline std::optional<RodrPose> EstimateReferenceMarkerPose(
 class MainLoopRunner
 {
     static inline const cv::Scalar COLOR_MASK{255, 0, 0}; /// red
+    static inline const cv::Scalar COLOR_REFERENCE{0, 255, 255}; /// yellow
 
 public:
     explicit MainLoopRunner(RefPtr<UserConfig> config,
-                            RefPtr<const CalibrationConfig> calibConfig,
+                            RefPtr<CalibrationConfig> calibConfig,
                             RefPtr<PlayspaceCalib> playspace,
                             RefPtr<VRDriver> vrDriver,
                             OptRefPtr<const TrackerUnit> referenceMarker = {})
         : mConfig(config),
+          mCalibConfig(calibConfig),
           camCalib(calibConfig->cameras[0]),
           videoStream(mConfig->videoStreams[0]),
           stagDetector(StagWrapper::ConvertLibrary(mConfig->markerLibrary), videoStream->quadDecimate),
@@ -49,6 +54,7 @@ public:
         mPlayspace->Set(mConfig->manualCalib.GetAsReal());
         // calculate position of camera from calibration data and send its position to steamvr
         mVRDriver->UpdateStation(mPlayspace->GetStationPoseOVR());
+        if (mReferenceMarker) InitReferenceCalibrator();
     }
 
     std::optional<RodrPose> GetReferenceMarkerPose() const
@@ -68,6 +74,12 @@ public:
         drawImg = frame.image;
         StagWrapper::ConvertGrayscale(frame.image, grayImg);
         const bool previewIsVisible = gui->IsPreviewVisible();
+
+        // The board is on the HMD, so its pose only means anything paired with the HMD pose
+        // from the same frame. Read it before detection, so that the board can also be
+        // predicted for the search mask below.
+        mHmdPose.reset();
+        if (mReferenceMarker && vrClient->IsInit()) mHmdPose = vrClient->GetHMDPose();
 
         const auto stampBeforeDetect = utils::SteadyTimer::Now();
         detectionTimer.Restart(stampBeforeDetect);
@@ -163,14 +175,15 @@ public:
             }
         }
 
+        // A reference board is not a tracker, so nothing above says where it is. Once the
+        // camera pose is known it follows from the HMD pose, and the board gets a window in
+        // the mask like everything else. Until then, or after the board has been missing long
+        // enough for the prediction to be doubtful, the whole frame has to be searched.
+        const bool referenceSearchIsMasked =
+            !mReferenceMarker || TryMaskReferenceMarker(previewIsVisible, searchRadius);
+
         // using copyTo with masking creates the image where everything but the locations where trackers are predicted to be is black
-        // A reference board can be anywhere in the frame, so its opt-in detection
-        // must not use tracker-only search masks. Disabled mode remains unchanged.
-        // PROVISIONAL: skipping the mask entirely gives up the detection speedup for the
-        // whole session. Once the camera pose is known, the board's screen position can be
-        // predicted from the HMD pose and added to the mask, so this must return to the
-        // masked path instead of staying full frame.
-        if (atleastOneTrackerVisible && !mReferenceMarker)
+        if (atleastOneTrackerVisible && referenceSearchIsMasked)
         {
             grayImg.copyTo(tempGrayMaskedImg, maskSearchImg);
             grayImg = tempGrayMaskedImg;
@@ -183,6 +196,11 @@ public:
         {
             mReferenceMarkerPose = EstimateReferenceMarkerPose(
                 dets, mReferenceMarker->GetArucoBoard(), *camCalib);
+            if (mReferenceMarkerPose)
+                mReferenceMissingFrames = 0;
+            else
+                ++mReferenceMissingFrames;
+            UpdateReferenceCalibration(gui, trackerCtrl);
         }
         else
         {
@@ -286,6 +304,17 @@ public:
 
         if (gui->IsPreviewVisible())
         {
+            // Draw the detected board next to where the HMD pose says it should be. Seeing
+            // the two apart is what tells a systematic calibration error from detection noise.
+            if (mReferenceMarkerPose)
+            {
+                cv::drawFrameAxes(drawImg, camCalib->cameraMatrix, camCalib->distortionCoeffs,
+                                  mReferenceMarkerPose->rotation.value, mReferenceMarkerPose->position, 0.15F);
+            }
+            if (mReferencePredictedCenter)
+            {
+                cv::circle(drawImg, *mReferencePredictedCenter, 6, COLOR_REFERENCE, -1, 8, 0);
+            }
             // draw and display the detections
             if (!dets.ids.empty()) cv::aruco::drawDetectedMarkers(drawImg, dets.corners, dets.ids);
             const cv::Size2i drawSize = ConstrainSize(GetMatSize(frame.image), mConfig->previewImageSize);
@@ -297,7 +326,147 @@ public:
     }
 
 private:
+    static const char* ReferenceStateName(ReferenceMarkerCalibrator::State state)
+    {
+        switch (state)
+        {
+        case ReferenceMarkerCalibrator::State::WaitingForData: return "waiting for the board and the HMD";
+        case ReferenceMarkerCalibrator::State::CollectingSamples: return "measuring the HMD to board offset";
+        case ReferenceMarkerCalibrator::State::Calibrated: return "calibrated";
+        }
+        return "unknown";
+    }
+
+    void InitReferenceCalibrator()
+    {
+        ReferenceMarkerCalibrator::Options options;
+        options.continuous = mConfig->referenceMarker.continuousCalibration;
+        mReferenceCalibrator = ReferenceMarkerCalibrator{options};
+
+        const auto& stored = mCalibConfig->referenceMarkerOffset;
+        if (!stored.calibrated || mConfig->referenceMarker.recalibrateHmdOffset)
+        {
+            ATT_LOG_INFO("reference marker: measuring where the board sits on the HMD, "
+                         "keep it in view of the camera and turn your head about different axes");
+            return;
+        }
+        mReferenceCalibrator.SetOffset(
+            Pose{cv::Point3d(stored.position), cv::Quatd::createFromRvec(stored.rotation)},
+            stored.scale);
+        ATT_LOG_INFO("reference marker: reusing the stored HMD to board offset, camera scale ", stored.scale);
+    }
+
+    /// Give the reference board its window in the search mask.
+    /// @return true when the board is accounted for and masked detection will not hide it
+    bool TryMaskReferenceMarker(bool previewIsVisible, int searchRadius)
+    {
+        mReferencePredictedCenter.reset();
+        if (mReferenceMissingFrames > framesToCheckAll) return false;
+        if (!mHmdPose || !mReferenceCalibrator.IsCalibrated()) return false;
+
+        const auto predicted = PredictMarkerPosInCamera(
+            *mReferenceCalibrator.GetCalib(), *mReferenceCalibrator.GetOffset(), *mHmdPose);
+        if (!predicted) return false;
+        // behind the camera, so there is nothing to find and nothing to leave unmasked
+        if ((*predicted)[Z] <= 0) return true;
+
+        std::array<cv::Point2d, 1> projected{};
+        {
+            const cv::Vec3d unusedRVec{}; // used to perform change of basis
+            const cv::Vec3d unusedTVec{};
+            const std::array<cv::Point3d, 1> points{cv::Point3d(*predicted)};
+            cv::projectPoints(points, unusedRVec, unusedTVec, camCalib->cameraMatrix, camCalib->distortionCoeffs, projected);
+        }
+        const cv::Point2d center = projected[0];
+        if (!center.inside(cv::Rect2d(0, 0, frame.image.cols, frame.image.rows))) return true;
+
+        mReferencePredictedCenter = center;
+        cv::circle(maskSearchImg, center, searchRadius, cv::Scalar(255), -1, 8, 0);
+        if (previewIsVisible) cv::circle(drawImg, center, searchRadius, COLOR_REFERENCE, 2, 8, 0);
+        return true;
+    }
+
+    void UpdateReferenceCalibration(RefPtr<GUI> gui, RefPtr<const ITrackerControl> trackerCtrl)
+    {
+        // An explicit calibration request wins. The reference board is the source of truth
+        // otherwise, so manual changes are not blended in: the automatic solve takes over
+        // again once the user closes the manual calibration.
+        if (trackerCtrl->manualRecalibrate || trackerCtrl->multicamAutocalib) return;
+
+        std::optional<Pose> markerPose;
+        if (mReferenceMarkerPose) markerPose = Pose(*mReferenceMarkerPose);
+        const auto outcome = mReferenceCalibrator.Update(mHmdPose, markerPose);
+
+        if (outcome.offsetSolved) SaveReferenceOffset();
+        if (outcome.calib)
+        {
+            mPlayspace->Set(*outcome.calib);
+            mVRDriver->UpdateStation(mPlayspace->GetStationPoseOVR());
+            // the gui owns the persisted copy of these numbers, and throttles its own redraw
+            gui->SetManualCalib(*outcome.calib);
+        }
+        LogReferenceDiagnostics(outcome);
+    }
+
+    void SaveReferenceOffset()
+    {
+        const auto& offset = mReferenceCalibrator.GetOffset();
+        if (!offset) return;
+        auto& stored = mCalibConfig->referenceMarkerOffset;
+        stored.calibrated = true;
+        stored.position = cv::Vec3d(offset->position);
+        stored.rotation = offset->rotation.toRotVec(cv::QUAT_ASSUME_UNIT);
+        stored.scale = mReferenceCalibrator.GetScale();
+        // written once per solve, so the next session starts from the first frame the board
+        // is seen in rather than asking for the head motion again
+        mCalibConfig->Save();
+        ATT_LOG_INFO("reference marker offset solved: position ",
+                     stored.position[X], " ", stored.position[Y], " ", stored.position[Z],
+                     " m, camera scale ", stored.scale);
+    }
+
+    void LogReferenceDiagnostics(const ReferenceMarkerCalibrator::UpdateOutcome& outcome)
+    {
+        if (outcome.state != mReferenceLoggedState)
+        {
+            mReferenceLoggedState = outcome.state;
+            ATT_LOG_INFO("reference marker: ", ReferenceStateName(outcome.state));
+        }
+        constexpr auto logInterval = utils::Seconds(2);
+        if (mReferenceLogTimer.Get() < logInterval) return;
+        mReferenceLogTimer.Restart();
+
+        if (!mReferenceCalibrator.IsCalibrated())
+        {
+            ATT_LOG_INFO("reference marker: ", ReferenceStateName(outcome.state),
+                         ", ", outcome.sampleCount, " samples, board missing for ",
+                         mReferenceMissingFrames, " frames");
+            return;
+        }
+
+        const auto& calib = *mReferenceCalibrator.GetCalib();
+        ATT_LOG_INFO("reference marker camera pose: position ",
+                     calib.posOffset[X], " ", calib.posOffset[Y], " ", calib.posOffset[Z],
+                     " m, angles ",
+                     calib.angleOffset[X] * RAD_2_DEG, " ", calib.angleOffset[Y] * RAD_2_DEG, " ",
+                     calib.angleOffset[Z] * RAD_2_DEG, " deg, scale ", calib.scale);
+        if (outcome.positionError && outcome.rotationError)
+        {
+            // The gap between the HMD pose predicted from the board and the one SteamVR
+            // reports. A steady offset means the calibration is off; noise that moves with
+            // the board means detection is the limit.
+            ATT_LOG_INFO("reference marker residual: ", *outcome.positionError * 100.0, " cm, ",
+                         *outcome.rotationError * RAD_2_DEG, " deg",
+                         outcome.outlier ? ", solution held back as an outlier" : "");
+        }
+        if (mReferenceMissingFrames > 0)
+        {
+            ATT_LOG_INFO("reference marker not detected for ", mReferenceMissingFrames, " frames");
+        }
+    }
+
     RefPtr<UserConfig> mConfig;
+    RefPtr<CalibrationConfig> mCalibConfig;
     RefPtr<const cfg::CameraCalib> camCalib;
     RefPtr<const cfg::VideoStream> videoStream;
     StagWrapper stagDetector;
@@ -306,6 +475,13 @@ private:
     RefPtr<VRDriver> mVRDriver;
     OptRefPtr<const TrackerUnit> mReferenceMarker;
     std::optional<RodrPose> mReferenceMarkerPose = std::nullopt;
+    /// HMD pose of the current frame, read before detection so it pairs with the board pose
+    std::optional<Pose> mHmdPose = std::nullopt;
+    ReferenceMarkerCalibrator mReferenceCalibrator{};
+    ReferenceMarkerCalibrator::State mReferenceLoggedState = ReferenceMarkerCalibrator::State::WaitingForData;
+    int mReferenceMissingFrames = 0;
+    std::optional<cv::Point2d> mReferencePredictedCenter = std::nullopt;
+    utils::SteadyTimer mReferenceLogTimer{};
 
     MarkerDetectionList dets{};
 
