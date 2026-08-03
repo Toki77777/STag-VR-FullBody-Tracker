@@ -15,6 +15,7 @@ set(ATT_TESTABLE_SOURCES
     ImageDrawing.cpp
 
     tracker/OpenVRClient.cpp
+    tracker/ReferenceMarkerCalib.cpp
     tracker/VRDriver.cpp
     tracker/VideoCapture.cpp
 
