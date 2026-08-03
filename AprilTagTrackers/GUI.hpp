@@ -53,6 +53,8 @@ enum class StatusItem
     Camera,
     Driver,
     Tracker,
+    CameraCalib,
+    TrackerCalib,
     COUNT
 };
 
@@ -76,6 +78,9 @@ public:
     void ShowPopup(U8String msg, PopupStyle style);
 
     void SetStatus(bool status, StatusItem item);
+    /// Show which parts of the one time calibration are stored, so the user can see that the
+    /// previous session's work is still in effect instead of redoing it to be sure.
+    void SetCalibrationStatus(bool cameraCalibrated, int calibratedTrackers, int trackerCount);
 
     PreviewControl CreatePreviewControl(PreviewId id = PreviewId::Main);
     void SetPreviewVisible(bool visible = true, PreviewId id = PreviewId::Main, bool userCanDestroy = true);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CalibrationStatus.hpp"
 #include "Config.hpp"
 #include "GUI.hpp"
 #include "RefPtr.hpp"
@@ -56,6 +57,10 @@ public:
     void Stop() override;
     void UpdateConfig() override;
 
+    /// Show which parts of the one time calibration were loaded from the previous session,
+    /// and point at the next step when something is still missing. Call once the gui exists.
+    void ReportCalibrationStatus();
+
     bool mainThreadRunning = false;
     bool cameraRunning = false;
 
@@ -70,6 +75,12 @@ private:
 
     void SetTrackerUnitsFromConfig();
     void SaveTrackerUnitsToCalib(const std::vector<tracker::TrackerUnit>&, Index trackerCount);
+    /// Update the calibration fields of the status bar and report what is stored.
+    tracker::CalibrationStatus RefreshCalibrationStatus();
+    /// Store a freshly measured camera calibration, asking first when it would replace a
+    /// saved one that looks better. There is no undo, so the user gets the choice.
+    void SaveCameraCalib(const cfg::CameraCalib& fresh);
+    void StoreCameraCalib(const cfg::CameraCalib& fresh);
     bool IsTrackerUnitsCalibrated() const
     {
         return std::all_of(mTrackerUnits.begin(), mTrackerUnits.end(),

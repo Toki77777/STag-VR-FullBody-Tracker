@@ -82,6 +82,25 @@ void GUI::MainFrame::SetStatus(bool status, StatusItem item)
     statusBar->SetStatusText(text, index);
 }
 
+void GUI::MainFrame::SetCalibrationStatus(bool cameraCalibrated, int calibratedTrackers, int trackerCount)
+{
+    const U8String cameraText = lc.status.CAMERA_CALIB +
+                                (cameraCalibrated ? lc.word.Stored : lc.word.Missing);
+    statusBar->SetStatusText(cameraText, static_cast<int>(StatusItem::CameraCalib));
+
+    U8String trackerText = lc.status.TRACKER_CALIB;
+    if (trackerCount > 0 && calibratedTrackers >= trackerCount)
+    {
+        trackerText += lc.word.Stored;
+    }
+    else
+    {
+        // a partial count is worth showing, it says how much of the setup is left
+        trackerText += std::to_string(calibratedTrackers) + "/" + std::to_string(trackerCount);
+    }
+    statusBar->SetStatusText(trackerText, static_cast<int>(StatusItem::TrackerCalib));
+}
+
 void GUI::MainFrame::ShowPrompt(const U8String& msg, const std::function<void(bool)>& onClose)
 {
     wxMessageDialog dial(nullptr, msg, "Message", wxOK | wxCANCEL);

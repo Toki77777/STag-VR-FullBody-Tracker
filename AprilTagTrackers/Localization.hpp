@@ -75,6 +75,8 @@ public:
         T(Info) = "Info";
         T(Connected) = "Connected";
         T(Disconnected) = "Disconnected";
+        T(Stored) = "stored";
+        T(Missing) = "not done";
         REFLECTABLE_END;
     };
 
@@ -84,6 +86,8 @@ public:
         T(CAMERA) = "Camera: ";
         T(DRIVER) = "SteamVR Driver: ";
         T(TRACKER) = "Tracker Running: ";
+        T(CAMERA_CALIB) = "Camera calib: ";
+        T(TRACKER_CALIB) = "Marker calib: ";
         REFLECTABLE_END;
     };
 
@@ -252,6 +256,23 @@ Yellow: The marker is being calibrated. Hold it still for a second.
 When all the markers on all trackers are shown as green, press OK to finish calibration.)";
 
     T(TRACKER_TRACKER_NOTCALIBRATED) = "Trackers not calibrated";
+
+    T(TRACKER_CAMERA_CALIBRATION_REPLACE) =
+        R"(The new camera calibration looks worse than the one already saved.
+
+Press OK to replace the saved calibration anyway, or Cancel to keep it.)";
+    T(TRACKER_CAMERA_CALIBRATION_KEPT) = "Kept the saved camera calibration.";
+
+    T(CALIBRATION_FIRSTRUN_CAMERA) =
+        R"(Camera calibration has not been done yet.
+
+Start the camera, then run "2. Calibrate camera" once with the charuco board.
+It is saved to calib.yaml and reused on every later start, so this is a one time step.)";
+    T(CALIBRATION_FIRSTRUN_TRACKERS) =
+        R"(The saved camera calibration was loaded. Marker calibration is still missing.
+
+Run "3. Calibrate trackers" once.
+It is saved to calib.yaml and reused on every later start, so this is a one time step.)";
 
     T(TRACKER_STEAMVR_NOTCONNECTED) = "Not connected to SteamVR";
 

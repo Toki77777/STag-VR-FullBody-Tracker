@@ -32,6 +32,7 @@ public:
     void ShowPopup(const U8String& msg, PopupStyle style);
 
     void SetStatus(bool status, StatusItem item);
+    void SetCalibrationStatus(bool cameraCalibrated, int calibratedTrackers, int trackerCount);
 
     /// thread safe.
     void UpdatePreview(const cv::Mat& image, PreviewId id = PreviewId::Main);

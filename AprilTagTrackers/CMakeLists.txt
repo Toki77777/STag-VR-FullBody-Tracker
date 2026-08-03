@@ -8,6 +8,7 @@ add_executable(AprilTagTrackers)
 
 # sources used in both testing and non testing builds
 set(ATT_TESTABLE_SOURCES
+    CalibrationStatus.cpp
     StagWrapper.cpp
     Helpers.cpp
     Quaternion.cpp

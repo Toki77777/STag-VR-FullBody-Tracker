@@ -27,6 +27,10 @@ void GUI::SetStatus(bool status, StatusItem item)
 {
 }
 
+void GUI::SetCalibrationStatus(bool cameraCalibrated, int calibratedTrackers, int trackerCount)
+{
+}
+
 PreviewControl GUI::CreatePreviewControl(PreviewId id)
 {
     return PreviewControl{this, id};

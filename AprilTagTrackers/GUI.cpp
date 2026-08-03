@@ -54,6 +54,12 @@ void GUI::SetStatus(bool status, StatusItem item)
     ForwardToMainThread(impl, &MainFrame::SetStatus, std::move(status), std::move(item));
 }
 
+void GUI::SetCalibrationStatus(bool cameraCalibrated, int calibratedTrackers, int trackerCount)
+{
+    ForwardToMainThread(impl, &MainFrame::SetCalibrationStatus,
+                        std::move(cameraCalibrated), std::move(calibratedTrackers), std::move(trackerCount));
+}
+
 PreviewControl GUI::CreatePreviewControl(PreviewId id)
 {
     return PreviewControl{this, id};

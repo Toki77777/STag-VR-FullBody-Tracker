@@ -47,6 +47,10 @@ bool MyApp::OnInit()
     tracker = std::make_unique<Tracker>(userConfig, userConfig.calib, lc);
     gui = std::make_unique<GUI>(tracker, lc, userConfig);
 
+    // Camera and marker calibration are one time steps stored in calib.yaml. Say on screen
+    // what was loaded, so nobody recalibrates just to find out whether it survived.
+    tracker->ReportCalibrationStatus();
+
     return true;
 }
 

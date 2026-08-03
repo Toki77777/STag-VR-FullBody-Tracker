@@ -27,6 +27,8 @@
 #include <algorithm>
 #include <array>
 #include <exception>
+#include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <mutex>
@@ -526,16 +528,16 @@ void Tracker::CalibrateCameraCharuco()
             }
             */
 
-            // Save calibration to our global params cameraMatrix and distCoeffs
-            RefPtr<cfg::CameraCalib> camCalib = calib_config.cameras[0];
-            camCalib->cameraMatrix = cameraMatrix;
-            camCalib->distortionCoeffs = distCoeffs;
-            camCalib->stdDeviationsIntrinsics = stdDeviationsIntrinsics;
-            camCalib->perViewErrors = perViewErrors;
-            camCalib->allCharucoCorners = allCharucoCorners;
-            camCalib->allCharucoIds = allCharucoIds;
-            calib_config.Save();
-            gui->ShowPopup(lc.TRACKER_CAMERA_CALIBRATION_COMPLETE, PopupStyle::Info);
+            // Hand the result over to be stored. Saving happens there, because a calibration
+            // that would replace a better saved one has to be confirmed by the user first.
+            cfg::CameraCalib fresh;
+            fresh.cameraMatrix = cameraMatrix;
+            fresh.distortionCoeffs = distCoeffs;
+            fresh.stdDeviationsIntrinsics = stdDeviationsIntrinsics;
+            fresh.perViewErrors = perViewErrors;
+            fresh.allCharucoCorners = allCharucoCorners;
+            fresh.allCharucoIds = allCharucoIds;
+            SaveCameraCalib(fresh);
         }
     }
 }
@@ -637,13 +639,13 @@ void Tracker::CalibrateCamera()
 
     calibrateCamera(objpoints, imgpoints, imageSize, cameraMatrix, distCoeffs, R, T);
 
-    RefPtr<cfg::CameraCalib> camCalib = calib_config.cameras[0];
-
-    camCalib->cameraMatrix = cameraMatrix;
-    camCalib->distortionCoeffs = distCoeffs;
-    calib_config.Save();
+    // The legacy path measures no per view errors, so the saved calibration is protected by
+    // asking rather than by comparing, see ShouldConfirmCameraCalibReplacement.
+    cfg::CameraCalib fresh;
+    fresh.cameraMatrix = cameraMatrix;
+    fresh.distortionCoeffs = distCoeffs;
+    SaveCameraCalib(fresh);
     mainThreadRunning = false;
-    gui->ShowPopup("Calibration complete.", PopupStyle::Info);
 }
 
 void Tracker::StartTrackerCalib()
@@ -993,6 +995,8 @@ void Tracker::CalibrateTracker()
         }
         SaveTrackerUnitsToCalib(trackerUnits, trackerNum);
         SetTrackerUnitsFromConfig();
+        // the saved marker calibration is what later sessions start from, so show it landed
+        RefreshCalibrationStatus();
     }
 }
 
@@ -1081,6 +1085,106 @@ void Tracker::SaveTrackerUnitsToCalib(const std::vector<tracker::TrackerUnit>& t
         calib_config.trackers[i]->corners = trackerUnits[i].GetMarkers();
     }
     calib_config.Save();
+}
+
+tracker::CalibrationStatus Tracker::RefreshCalibrationStatus()
+{
+    const auto status = tracker::GetCalibrationStatus(user_config, calib_config);
+    gui->SetCalibrationStatus(status.camera, status.calibratedTrackers, status.trackerCount);
+    return status;
+}
+
+void Tracker::ReportCalibrationStatus()
+{
+    const auto status = RefreshCalibrationStatus();
+    switch (tracker::GetNextCalibrationStep(status))
+    {
+    case tracker::CalibrationStep::Camera:
+        ATT_LOG_INFO("no camera calibration stored, guiding the user through it");
+        gui->ShowPopup(lc.CALIBRATION_FIRSTRUN_CAMERA, PopupStyle::Info);
+        break;
+    case tracker::CalibrationStep::Trackers:
+        ATT_LOG_INFO("camera calibration loaded, ", status.calibratedTrackers, " of ",
+                     status.trackerCount, " trackers calibrated");
+        gui->ShowPopup(lc.CALIBRATION_FIRSTRUN_TRACKERS, PopupStyle::Info);
+        break;
+    case tracker::CalibrationStep::Done:
+        // Nothing to ask for. Say so in the log, the status bar carries it on screen.
+        ATT_LOG_INFO("calibration loaded from a previous session: camera and ",
+                     status.calibratedTrackers, " trackers");
+        break;
+    }
+}
+
+namespace
+{
+
+/// Compact, language neutral summary of a calibration, for the replace prompt.
+std::string DescribeCameraCalib(std::string_view label, const tracker::CameraCalibScore& score)
+{
+    std::ostringstream out;
+    out << label << ": ";
+    if (!score.present)
+    {
+        out << "unusable";
+    }
+    else if (!score.HasErrorData())
+    {
+        out << "no error data";
+    }
+    else
+    {
+        out << score.views << " views, " << std::fixed << std::setprecision(2)
+            << score.meanError << " px mean, " << score.maxError << " px max";
+    }
+    return out.str();
+}
+
+} // namespace
+
+void Tracker::SaveCameraCalib(const cfg::CameraCalib& fresh)
+{
+    const auto stored = tracker::ScoreCameraCalib(*calib_config.cameras[0]);
+    const auto stillFresh = tracker::ScoreCameraCalib(fresh);
+    if (!tracker::ShouldConfirmCameraCalibReplacement(stored, stillFresh))
+    {
+        StoreCameraCalib(fresh);
+        return;
+    }
+
+    // A saved calibration is work the user already did and overwriting it cannot be undone,
+    // so show both sets of numbers and let them decide.
+    ATT_LOG_INFO("new camera calibration looks worse than the saved one, asking before replacing");
+    const U8String message = lc.TRACKER_CAMERA_CALIBRATION_REPLACE +
+                             (std::string("\n\n") + DescribeCameraCalib("saved", stored) +
+                              "\n" + DescribeCameraCalib("new", stillFresh));
+    // Runs on the ui thread after this calibration thread is gone, so capture by value.
+    gui->ShowPrompt(message, [this, fresh](bool pressedOk)
+        {
+            if (!pressedOk)
+            {
+                ATT_LOG_INFO("kept the saved camera calibration");
+                gui->ShowPopup(lc.TRACKER_CAMERA_CALIBRATION_KEPT, PopupStyle::Info);
+                return;
+            }
+            StoreCameraCalib(fresh);
+        });
+}
+
+void Tracker::StoreCameraCalib(const cfg::CameraCalib& fresh)
+{
+    *calib_config.cameras[0] = fresh;
+    calib_config.Save();
+    const auto status = RefreshCalibrationStatus();
+    ATT_LOG_INFO("saved camera calibration");
+
+    U8String message = lc.TRACKER_CAMERA_CALIBRATION_COMPLETE;
+    if (tracker::GetNextCalibrationStep(status) == tracker::CalibrationStep::Trackers)
+    {
+        // straight on to the step that is still missing, rather than leaving the user to find it
+        message = message + std::string("\n\n") + lc.CALIBRATION_FIRSTRUN_TRACKERS;
+    }
+    gui->ShowPopup(message, PopupStyle::Info);
 }
 
 TEST_CASE("PlayspaceCalib applies a known translation")
@@ -1236,6 +1340,68 @@ TEST_CASE("Existing user config without a reference marker keeps it disabled")
     // the calibration settings added later must not change what an old config means
     CHECK(config.referenceMarker.continuousCalibration);
     CHECK_NOT(config.referenceMarker.recalibrateHmdOffset);
+}
+
+TEST_CASE("Camera and tracker calibration survive being written to a file and read back")
+{
+    // Both calibrations are meant to be done once and then reused on every later launch, so
+    // the round trip through calib.yaml is the property that has to hold. A cv::Mat or a
+    // corner list that does not survive it would send the user back to recalibrating.
+    const auto path = std::filesystem::temp_directory_path() / "att-calib-roundtrip-test.yaml";
+    std::filesystem::remove(path);
+
+    const cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) << 612.5, 0, 319.5, 0, 611.25, 239.5, 0, 0, 1);
+    const cv::Mat distortionCoeffs = (cv::Mat_<double>(1, 5) << 0.1, -0.25, 0.001, -0.002, 0.05);
+    const MarkerCorners3f firstMarker = tracker::TrackerUnit::CreateModelMarker(0.093);
+    MarkerCorners3f secondMarker = firstMarker;
+    for (auto& corner : secondMarker) corner.z += 0.02F;
+
+    {
+        CalibrationConfig written;
+        written.SetPath(path);
+        written.cameras[0]->cameraMatrix = cameraMatrix;
+        written.cameras[0]->distortionCoeffs = distortionCoeffs;
+        written.cameras[0]->perViewErrors = {0.21, 0.34};
+        written.trackers[0]->ids = {0, 1};
+        written.trackers[0]->corners = {firstMarker, secondMarker};
+        written.referenceMarkerOffset.calibrated = true;
+        written.referenceMarkerOffset.position = {0.02, 0.06, -0.11};
+        written.referenceMarkerOffset.rotation = {0.1, -0.2, 0.3};
+        written.referenceMarkerOffset.scale = 1.02;
+        REQUIRE(written.Save());
+    }
+
+    CalibrationConfig read;
+    read.SetPath(path);
+    REQUIRE(read.Load());
+
+    const auto readCamera = read.cameras[0];
+    REQUIRE_NOT(readCamera->cameraMatrix.empty());
+    CHECK(readCamera->cameraMatrix.rows == 3);
+    CHECK(readCamera->cameraMatrix.cols == 3);
+    CHECK(cv::norm(readCamera->cameraMatrix - cameraMatrix) == doctest::Approx(0.0));
+    CHECK(cv::norm(readCamera->distortionCoeffs - distortionCoeffs) == doctest::Approx(0.0));
+    REQUIRE(readCamera->perViewErrors.size() == 2);
+    CHECK(readCamera->perViewErrors[1] == doctest::Approx(0.34));
+
+    const auto readTracker = read.trackers[0];
+    REQUIRE(readTracker->ids.size() == 2);
+    CHECK(readTracker->ids[1] == 1);
+    REQUIRE(readTracker->corners.size() == 2);
+    REQUIRE(readTracker->corners[1].size() == 4);
+    CHECK(readTracker->corners[1][2].z == doctest::Approx(secondMarker[2].z));
+    CHECK(readTracker->corners[0][0].x == doctest::Approx(firstMarker[0].x));
+
+    // a stored calibration must also be usable, not merely present
+    tracker::TrackerUnit unit;
+    unit.SetMarkers(readTracker->ids, readTracker->corners);
+    CHECK(unit.IsCalibrated());
+
+    CHECK(read.referenceMarkerOffset.calibrated);
+    CHECK(read.referenceMarkerOffset.scale == doctest::Approx(1.02));
+    CHECK(read.referenceMarkerOffset.position[Z] == doctest::Approx(-0.11));
+
+    std::filesystem::remove(path);
 }
 
 TEST_CASE("Existing calibration config without a stored board offset asks for it to be measured")
