@@ -10,9 +10,16 @@
 #include <vector>
 
 /// STag marker library HD (hamming distance) values, indexed by UserConfig::markerLibrary.
-/// Larger HD means fewer but more robust markers:
-/// HD11 = 22309, HD13 = 2884, HD15 = 766, HD17 = 157, HD19 = 38, HD21 = 12, HD23 = 6 markers
+/// Larger HD means fewer but more robust markers.
 constexpr std::array<int, 7> STAG_LIBRARY_HDS = {11, 13, 15, 17, 19, 21, 23};
+
+/// Markers each library contains, indexed like STAG_LIBRARY_HDS. The valid marker IDs of a
+/// library are [0, count), and these match the line counts of utilities/stag-codebooks/HD*.txt,
+/// which is where the detector's codebooks come from.
+/// An ID at or past the count of the library in use can never be detected, so the ID ranges
+/// handed out to trackers have to stay inside it. HD19 in particular only has 38 markers,
+/// far fewer than the ID ranges a large markersPerTracker would ask for.
+constexpr std::array<int, 7> STAG_LIBRARY_MARKER_COUNTS = {22309, 2884, 766, 157, 38, 12, 6};
 
 struct MarkerDetectionList
 {
@@ -36,6 +43,16 @@ public:
             return STAG_LIBRARY_HDS[0];
         }
         return STAG_LIBRARY_HDS[libraryIndex];
+    }
+
+    /// markers available in the library selected by a UserConfig::markerLibrary choice index
+    static int MarkerCount(int libraryIndex)
+    {
+        if (libraryIndex < 0 || libraryIndex >= static_cast<int>(STAG_LIBRARY_MARKER_COUNTS.size()))
+        {
+            return STAG_LIBRARY_MARKER_COUNTS[0];
+        }
+        return STAG_LIBRARY_MARKER_COUNTS[libraryIndex];
     }
 
     /// convert BGR image to single channel grayscale

@@ -64,10 +64,12 @@ public:
     ATT_SERIAL_COMMENT("Maximum preview image dimension in pixels");
     REFLECTABLE_FIELD(cfg::Validated<int>, previewImageSize){480, cfg::GreaterEqual(1)};
     ATT_SERIAL_COMMENT("STag marker library: 0=HD11, 1=HD13, 2=HD15, 3=HD17, 4=HD19, 5=HD21, 6=HD23");
-    REFLECTABLE_FIELD(int, markerLibrary) = 0;
-    REFLECTABLE_FIELD(cfg::Validated<int>, markersPerTracker){45, [](int& value)
+    ATT_SERIAL_COMMENT("markers available: 22309, 2884, 766, 157, 38, 12, 6 - marker IDs must stay below this");
+    REFLECTABLE_FIELD(int, markerLibrary) = 4;
+    ATT_SERIAL_COMMENT("ID range width per tracker; trackerNum * this must fit the marker library");
+    REFLECTABLE_FIELD(cfg::Validated<int>, markersPerTracker){12, [](int& value)
                                                               {
-                                                                  if (value <= 0) value = 45;
+                                                                  if (value <= 0) value = 12;
                                                               }};
     REFLECTABLE_FIELD(bool, disableOpenVrApi) = false;
     REFLECTABLE_FIELD(cfg::List<cfg::VideoStream>, videoStreams){1};

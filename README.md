@@ -12,7 +12,42 @@ STag マーカーを使った VR 用フルボディトラッキング。
 
 ### マーカーの印刷
 
-[images-to-print](images-to-print) フォルダには、印刷してすぐに使える A4 の STag（HD11）マーカーシートが入っています。マーカーは 93mm（黒い正方形の辺の長さ）で、デフォルトのトラッカー構成に合わせてサイズと配置が調整されています。各ページには 1 つのトラッカーの表面（front）または裏面（back）のマーカーペアが配置されているため、トラッカーごとに表面ページ 1 枚と裏面ページ 1 枚を印刷してください（同じトラッカーの表面シートと裏面シートには、その同一トラッカーに属する異なるマーカー ID が印刷されています）。より多くのマーカーが必要な場合や、別サイズのマーカーが必要な場合は、[utilities/generate_stag_markers.py](utilities/generate_stag_markers.py) で自分で生成できます（numpy、opencv-python、pillow をインストールした Python が必要です）。
+[images-to-print](images-to-print) フォルダには、印刷してすぐに使える A4 の STag（**HD19**）マーカーシートが入っています。マーカーは 93mm（黒い正方形の辺の長さ）で、デフォルトのトラッカー構成に合わせてサイズと配置が調整されています。各ページには 1 つのトラッカーの表面（front）または裏面（back）のマーカーペアが配置されているため、トラッカーごとに表面ページ 1 枚と裏面ページ 1 枚を印刷してください（同じトラッカーの表面シートと裏面シートには、その同一トラッカーに属する異なるマーカー ID が印刷されています）。より多くのマーカーが必要な場合や、別サイズのマーカーが必要な場合は、[utilities/generate_stag_markers.py](utilities/generate_stag_markers.py) で自分で生成できます（numpy、opencv-python、pillow をインストールした Python が必要です）。
+
+### マーカーライブラリと ID の対応（重要）
+
+**印刷したマーカーのライブラリと `config.yaml` の `markerLibrary` が一致していないと、1 つも検出されません。**
+ID が同じでもライブラリが違えばパターンが全く違うため、見た目では区別できません。
+
+ライブラリごとに使える ID の個数が決まっています。**この個数以上の ID は存在しないため、検出することは原理的に不可能です。**
+
+| `markerLibrary` | ライブラリ | マーカー数 | 有効な ID |
+| --- | --- | --- | --- |
+| 0 | HD11 | 22309 | 0〜22308 |
+| 1 | HD13 | 2884 | 0〜2883 |
+| 2 | HD15 | 766 | 0〜765 |
+| 3 | HD17 | 157 | 0〜156 |
+| **4（既定）** | **HD19** | **38** | **0〜37** |
+| 5 | HD21 | 12 | 0〜11 |
+| 6 | HD23 | 6 | 0〜5 |
+
+既定は HD19（38 個）で、`markersPerTracker: 12` と組み合わせて次のように割り当てられます。同梱の印刷シートもこの ID で生成されています。
+
+| 用途 | ID 範囲 | 同梱シート |
+| --- | --- | --- |
+| トラッカー 0 | 0〜11（表 0,1 / 裏 2,3） | `trackers-a4-paper` 1 ページ目 |
+| トラッカー 1 | 12〜23（表 12,13 / 裏 14,15） | 2 ページ目 |
+| トラッカー 2 | 24〜35（表 24,25 / 裏 26,27） | 3 ページ目 |
+| HMD 参照ボード | 36,37 | `reference-board-a4-paper` |
+
+`markersPerTracker` × `trackerNum` がライブラリのマーカー数を超える場合は、収まる値に自動的に縮小し、その旨をログに出します（例: HD19 でトラッカー 3 個なら 12 個ずつ）。ID 範囲を明示指定していてライブラリの範囲外だった場合は、エラーをログに出して既定の割り当てに戻します。
+
+HD11 など別のライブラリを使いたい場合は、`markerLibrary` を変更したうえで、そのライブラリでマーカーを再生成・再印刷してください。
+
+```
+python utilities/generate_stag_markers.py --hd 11 --sheet a4 --marker-size-mm 93 \
+  --sheet-cols 1 --sheet-rows 2 --sheet-ids 0 1 45 46 90 91 --sheet-out front.pdf
+```
 
 プログラムは [releases](https://github.com/Toki77777/STag-VR-FullBody-Tracker/releases) タブからダウンロードできます。
 
@@ -65,10 +100,10 @@ STag マーカーを使った VR 用フルボディトラッキング。
 
 ### セットアップ手順
 
-1. トラッカーが使っていない ID のマーカーを印刷します。トラッカーの ID 範囲は既定で
-   1 トラッカーあたり `markersPerTracker`（既定 45）枚ずつなので、3 トラッカーなら 0〜134 を使います。
-   重ならない範囲、たとえば 200〜209 を選んでください。マーカーは
-   [utilities/generate_stag_markers.py](utilities/generate_stag_markers.py) で生成できます。
+1. トラッカーが使っていない ID のマーカーを印刷します。既定（HD19、`markersPerTracker: 12`、
+   トラッカー 3 個）ではトラッカーが 0〜35 を使うので、残りは **36,37** です。
+   同梱の [images-to-print/reference-board-a4-paper](images-to-print/reference-board-a4-paper)
+   がこの 2 枚です。**ライブラリのマーカー数を超える ID（HD19 なら 38 以上）は存在しないので使えません。**
 2. 印刷したマーカーを HMD に固定します。**HMD に対して動かないこと**が条件です。ずれると、
    ずれた分がそのままトラッキング全体のずれになります。
 3. `config.yaml` の `referenceMarker` を設定します。ID 範囲は `[markerIdBegin, markerIdEnd)`
@@ -76,8 +111,8 @@ STag マーカーを使った VR 用フルボディトラッキング。
    ```yaml
    referenceMarker:
       enabled: 1
-      markerIdBegin: 200
-      markerIdEnd: 210
+      markerIdBegin: 36
+      markerIdEnd: 38
    ```
    範囲がトラッカー側と重なっている、または不正な場合は、参照マーカーだけが無効になり、
    トラッカーの ID 割り当ては一切変わりません。ログにエラーが出ます。

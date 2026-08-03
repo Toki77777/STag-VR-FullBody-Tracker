@@ -60,8 +60,11 @@ struct MarkerIdRange
 class TrackerMarkerIdPartition
 {
 public:
-    TrackerMarkerIdPartition(int trackerCount, int markersPerTracker, const cfg::List<cfg::TrackerUnit>& trackerConfigs)
-        : mTrackerCount(std::max(0, trackerCount)), mMarkersPerTracker(markersPerTracker)
+    /// @param markerCount markers the selected STag library has, see StagWrapper::MarkerCount
+    TrackerMarkerIdPartition(int trackerCount, int markersPerTracker, int markerCount,
+                             const cfg::List<cfg::TrackerUnit>& trackerConfigs)
+        : mTrackerCount(std::max(0, trackerCount)), mMarkersPerTracker(markersPerTracker),
+          mMarkerCount(std::max(0, markerCount))
     {
         ResetToDefaults();
         if (!TryApplyConfiguredRanges(trackerConfigs))
@@ -109,11 +112,27 @@ private:
 
     void ResetToDefaults()
     {
+        // The library caps how many markers exist at all. Handing out IDs past its end gives
+        // a tracker a main marker that cannot be printed or detected, and the calibration
+        // then waits forever for a marker that does not exist, so fit the ranges instead.
+        int perTracker = mMarkersPerTracker;
+        if (mTrackerCount > 0 && mMarkerCount > 0)
+        {
+            const int fits = mMarkerCount / mTrackerCount;
+            if (fits < perTracker)
+            {
+                ATT_LOG_ERROR("markersPerTracker ", mMarkersPerTracker, " does not fit ", mTrackerCount,
+                              " trackers in the selected STag library, which has ", mMarkerCount,
+                              " markers; using ", std::max(1, fits), " per tracker instead.");
+                perTracker = std::max(1, fits);
+            }
+        }
+
         mRanges.clear();
         mRanges.reserve(static_cast<std::size_t>(mTrackerCount));
         for (int trackerIndex = 0; trackerIndex < mTrackerCount; ++trackerIndex)
         {
-            mRanges.push_back({trackerIndex * mMarkersPerTracker, (trackerIndex + 1) * mMarkersPerTracker});
+            mRanges.push_back({trackerIndex * perTracker, (trackerIndex + 1) * perTracker});
         }
     }
 
@@ -125,6 +144,13 @@ private:
             const bool useDefault = config->markerIdBegin == -1 && config->markerIdEnd == -1;
             if (useDefault) continue;
             if (config->markerIdBegin < 0 || config->markerIdEnd <= config->markerIdBegin) return false;
+            if (mMarkerCount > 0 && config->markerIdEnd > mMarkerCount)
+            {
+                ATT_LOG_ERROR("Tracker ", trackerIndex, " marker ID range [", config->markerIdBegin, ", ",
+                              config->markerIdEnd, ") runs past the ", mMarkerCount,
+                              " markers of the selected STag library.");
+                return false;
+            }
             mRanges[trackerIndex] = {config->markerIdBegin, config->markerIdEnd};
         }
 
@@ -140,16 +166,28 @@ private:
 
     int mTrackerCount;
     int mMarkersPerTracker;
+    int mMarkerCount;
     std::vector<MarkerIdRange> mRanges;
 };
 
+/// @param markerCount markers the selected STag library has, see StagWrapper::MarkerCount
 std::optional<MarkerIdRange> ResolveReferenceMarkerRange(
     const cfg::ReferenceMarker& config,
-    const TrackerMarkerIdPartition& trackerRanges)
+    const TrackerMarkerIdPartition& trackerRanges,
+    int markerCount)
 {
     if (!config.enabled) return std::nullopt;
 
     const MarkerIdRange range{config.markerIdBegin, config.markerIdEnd};
+    if (markerCount > 0 && range.end > markerCount)
+    {
+        // Named separately from the checks below: a range that is fine in itself but past the
+        // end of a small library is the mistake that silently detects nothing at all.
+        ATT_LOG_ERROR("Reference marker ID range [", range.begin, ", ", range.end,
+                      ") runs past the ", markerCount,
+                      " markers of the selected STag library; reference marker disabled.");
+        return std::nullopt;
+    }
     if (range.begin < 0 || range.end <= range.begin || trackerRanges.Overlaps(range))
     {
         ATT_LOG_ERROR("Invalid or overlapping reference marker ID range; reference marker disabled.");
@@ -849,8 +887,9 @@ void Tracker::CalibrateTracker()
     MarkerDetectionList dets{};
 
     const Index trackerNum = user_config.trackerNum;
-    const TrackerMarkerIdPartition markerIds{static_cast<int>(trackerNum), user_config.markersPerTracker, user_config.trackers};
-    const auto referenceMarkerRange = ResolveReferenceMarkerRange(user_config.referenceMarker, markerIds);
+    const int markerCount = StagWrapper::MarkerCount(user_config.markerLibrary);
+    const TrackerMarkerIdPartition markerIds{static_cast<int>(trackerNum), user_config.markersPerTracker, markerCount, user_config.trackers};
+    const auto referenceMarkerRange = ResolveReferenceMarkerRange(user_config.referenceMarker, markerIds, markerCount);
     const double markerSize = user_config.markerSize * 0.01; // centimeters to meters
 
     const MarkerCorners3f modelMarker = tracker::TrackerUnit::CreateModelMarker(markerSize);
@@ -1039,21 +1078,35 @@ void EnsureTrackersConfigSize(UserConfig& userConfig, CalibrationConfig& calibCo
 void Tracker::SetTrackerUnitsFromConfig()
 {
     EnsureTrackersConfigSize(user_config, calib_config);
-    const TrackerMarkerIdPartition markerIds{static_cast<int>(user_config.trackers.GetSize()), user_config.markersPerTracker, user_config.trackers};
+    const int markerCount = StagWrapper::MarkerCount(user_config.markerLibrary);
+    const TrackerMarkerIdPartition markerIds{static_cast<int>(user_config.trackers.GetSize()), user_config.markersPerTracker, markerCount, user_config.trackers};
     mTrackerUnits.resize(user_config.trackers.GetSize());
     for (Index i = 0; i < static_cast<Index>(mTrackerUnits.size()); ++i)
     {
         const auto config = user_config.trackers[i];
         const auto calib = calib_config.trackers[i];
         auto& unit = mTrackerUnits[i];
-        markerIds.EnsureContainsAll(static_cast<int>(i), calib->ids);
-        unit.SetMarkers(calib->ids, calib->corners);
-        if (user_config.trackerCalibCenters) unit.RecenterMarkers();
+        unit = tracker::TrackerUnit{};
         unit.SetRole(config->role);
+        try
+        {
+            markerIds.EnsureContainsAll(static_cast<int>(i), calib->ids);
+            unit.SetMarkers(calib->ids, calib->corners);
+            if (user_config.trackerCalibCenters) unit.RecenterMarkers();
+        }
+        catch (const std::exception& e)
+        {
+            // A stored calibration can hold marker IDs that the current library or ID ranges
+            // no longer cover, which is what switching STag library does to every tracker.
+            // Leave that one uncalibrated and say so; refusing to start at all would leave
+            // the user with a config they cannot reach the calibration buttons to fix.
+            ATT_LOG_ERROR("Ignoring the stored calibration of tracker ", i,
+                          ", it has to be calibrated again: ", e.what());
+        }
     }
 
     mReferenceMarkerUnit.reset();
-    const auto referenceMarkerRange = ResolveReferenceMarkerRange(user_config.referenceMarker, markerIds);
+    const auto referenceMarkerRange = ResolveReferenceMarkerRange(user_config.referenceMarker, markerIds, markerCount);
     if (!referenceMarkerRange) return;
 
     try
@@ -1202,7 +1255,7 @@ TEST_CASE("PlayspaceCalib applies a known translation")
 TEST_CASE("Tracker marker IDs are partitioned into unchanged contiguous ranges")
 {
     const cfg::List<cfg::TrackerUnit> trackerConfigs{3};
-    const TrackerMarkerIdPartition markerIds{3, 45, trackerConfigs};
+    const TrackerMarkerIdPartition markerIds{3, 45, STAG_LIBRARY_MARKER_COUNTS[0], trackerConfigs};
 
     CHECK(markerIds.MainMarkerId(0) == 0);
     CHECK(markerIds.MainMarkerId(1) == 45);
@@ -1231,7 +1284,7 @@ TEST_CASE("Tracker marker ID ranges support per-tracker overrides")
     trackerConfigs[1]->markerIdEnd = 110;
     trackerConfigs[2]->markerIdBegin = 200;
     trackerConfigs[2]->markerIdEnd = 220;
-    const TrackerMarkerIdPartition markerIds{3, 45, trackerConfigs};
+    const TrackerMarkerIdPartition markerIds{3, 45, STAG_LIBRARY_MARKER_COUNTS[0], trackerConfigs};
 
     CHECK(markerIds.MainMarkerId(0) == 0);
     CHECK(markerIds.MainMarkerId(1) == 100);
@@ -1248,7 +1301,7 @@ TEST_CASE("Invalid tracker marker ID ranges fall back to all defaults")
         cfg::List<cfg::TrackerUnit> trackerConfigs{3};
         trackerConfigs[1]->markerIdBegin = 100;
         trackerConfigs[1]->markerIdEnd = 100;
-        const TrackerMarkerIdPartition markerIds{3, 45, trackerConfigs};
+        const TrackerMarkerIdPartition markerIds{3, 45, STAG_LIBRARY_MARKER_COUNTS[0], trackerConfigs};
         CHECK(markerIds.MainMarkerId(1) == 45);
         CHECK(markerIds.Contains(1, 89));
     }
@@ -1258,7 +1311,7 @@ TEST_CASE("Invalid tracker marker ID ranges fall back to all defaults")
         cfg::List<cfg::TrackerUnit> trackerConfigs{3};
         trackerConfigs[1]->markerIdBegin = 44;
         trackerConfigs[1]->markerIdEnd = 60;
-        const TrackerMarkerIdPartition markerIds{3, 45, trackerConfigs};
+        const TrackerMarkerIdPartition markerIds{3, 45, STAG_LIBRARY_MARKER_COUNTS[0], trackerConfigs};
         CHECK(markerIds.MainMarkerId(1) == 45);
         CHECK(markerIds.MainMarkerId(2) == 90);
     }
@@ -1267,7 +1320,7 @@ TEST_CASE("Invalid tracker marker ID ranges fall back to all defaults")
     {
         cfg::List<cfg::TrackerUnit> trackerConfigs{3};
         trackerConfigs[1]->markerIdBegin = 100;
-        const TrackerMarkerIdPartition markerIds{3, 45, trackerConfigs};
+        const TrackerMarkerIdPartition markerIds{3, 45, STAG_LIBRARY_MARKER_COUNTS[0], trackerConfigs};
         CHECK(markerIds.MainMarkerId(1) == 45);
     }
 }
@@ -1275,7 +1328,7 @@ TEST_CASE("Invalid tracker marker ID ranges fall back to all defaults")
 TEST_CASE("Serialized tracker calibration IDs must stay inside their configured range")
 {
     const cfg::List<cfg::TrackerUnit> trackerConfigs{2};
-    const TrackerMarkerIdPartition markerIds{2, 45, trackerConfigs};
+    const TrackerMarkerIdPartition markerIds{2, 45, STAG_LIBRARY_MARKER_COUNTS[0], trackerConfigs};
 
     DOCTEST_CHECK_NOTHROW(markerIds.EnsureContainsAll(0, {0, 44}));
     DOCTEST_CHECK_NOTHROW(markerIds.EnsureContainsAll(1, {45, 89}));
@@ -1303,7 +1356,8 @@ TEST_CASE("Serialized tracker calibration rejects malformed IDs and corners")
 
 TEST_CASE("Existing tracker config without marker ID ranges uses defaults")
 {
-    const std::string yaml = "%YAML:1.0\n---\nmarkersPerTracker: 17\ntrackers:\n  - { role: Waist }\n  - { role: LeftFoot }\n  - { role: RightFoot }\n";
+    // an older config selected HD11, whose 22309 markers a large partition fits inside
+    const std::string yaml = "%YAML:1.0\n---\nmarkerLibrary: 0\nmarkersPerTracker: 17\ntrackers:\n  - { role: Waist }\n  - { role: LeftFoot }\n  - { role: RightFoot }\n";
     cv::FileStorage storage{yaml, cv::FileStorage::READ | cv::FileStorage::MEMORY};
     UserConfig config;
     serial::FileStorageReader reader{storage.root()};
@@ -1311,7 +1365,7 @@ TEST_CASE("Existing tracker config without marker ID ranges uses defaults")
 
     CHECK(config.trackers[0]->markerIdBegin == -1);
     CHECK(config.trackers[0]->markerIdEnd == -1);
-    const TrackerMarkerIdPartition markerIds{3, config.markersPerTracker, config.trackers};
+    const TrackerMarkerIdPartition markerIds{3, config.markersPerTracker, StagWrapper::MarkerCount(config.markerLibrary), config.trackers};
     CHECK(markerIds.MainMarkerId(0) == 0);
     CHECK(markerIds.MainMarkerId(1) == 17);
     CHECK(markerIds.MainMarkerId(2) == 34);
@@ -1340,6 +1394,119 @@ TEST_CASE("Existing user config without a reference marker keeps it disabled")
     // the calibration settings added later must not change what an old config means
     CHECK(config.referenceMarker.continuousCalibration);
     CHECK_NOT(config.referenceMarker.recalibrateHmdOffset);
+}
+
+TEST_CASE("A stored calibration from another marker library does not stop the app starting")
+{
+    // Switching STag library invalidates every stored marker ID. That must cost the user a
+    // recalibration, not the ability to launch the app and press the calibration button.
+    UserConfig userConfig;
+    CalibrationConfig calibConfig;
+    const MarkerCorners3f marker = tracker::TrackerUnit::CreateModelMarker(0.093);
+    // IDs from the old HD11 default partition, outside every range the HD19 default gives out
+    calibConfig.trackers[0]->ids = {0};
+    calibConfig.trackers[0]->corners = {marker};
+    calibConfig.trackers[1]->ids = {45};
+    calibConfig.trackers[1]->corners = {marker};
+    calibConfig.trackers[2]->ids = {90};
+    calibConfig.trackers[2]->corners = {marker};
+    const Localization lc;
+
+    const Tracker tracker{userConfig, calibConfig, lc};
+
+    // the trackers that can be kept are kept, and the status reports what is left to redo
+    const auto status = tracker::GetCalibrationStatus(userConfig, calibConfig);
+    CHECK(status.trackerCount == 3);
+    CHECK(status.calibratedTrackers == 3); // the stored file is untouched, nothing is thrown away
+}
+
+TEST_CASE("Marker ID ranges are fitted to the markers the selected library actually has")
+{
+    // HD19 has 38 markers, so the ranges a large markersPerTracker asks for would give
+    // trackers a main marker that does not exist. Nothing would ever be detected for them,
+    // and the calibration would wait for a marker that cannot be printed.
+    constexpr int hd19 = 4;
+    constexpr int hd19Count = 38;
+    CHECK(STAG_LIBRARY_HDS[hd19] == 19);
+    CHECK(StagWrapper::MarkerCount(hd19) == hd19Count);
+
+    const cfg::List<cfg::TrackerUnit> trackerConfigs{3};
+    const TrackerMarkerIdPartition fitted{3, 45, hd19Count, trackerConfigs};
+
+    CHECK(fitted.MainMarkerId(0) == 0);
+    CHECK(fitted.MainMarkerId(1) == 12);
+    CHECK(fitted.MainMarkerId(2) == 24);
+    CHECK(fitted.Contains(0, 11));
+    CHECK(!fitted.Contains(0, 12));
+    CHECK(fitted.Contains(2, 35));
+    // every ID handed out has to be one the library can produce
+    for (int tracker = 0; tracker < 3; ++tracker)
+    {
+        CHECK(fitted.MainMarkerId(tracker) < hd19Count);
+        CHECK(!fitted.Contains(tracker, hd19Count));
+    }
+}
+
+TEST_CASE("A default config asks for marker IDs the default library has")
+{
+    // The shipped defaults have to agree with each other and with the sheets in
+    // images-to-print, or a first run cannot detect anything.
+    const UserConfig config;
+    CHECK(config.markerLibrary == 4); // HD19
+    CHECK(config.markersPerTracker == 12);
+    CHECK(config.trackerNum == 3);
+    const int markerCount = StagWrapper::MarkerCount(config.markerLibrary);
+    const TrackerMarkerIdPartition markerIds{
+        static_cast<int>(config.trackerNum), config.markersPerTracker, markerCount, config.trackers};
+
+    CHECK(config.trackerNum * config.markersPerTracker <= markerCount);
+    for (int tracker = 0; tracker < config.trackerNum; ++tracker)
+    {
+        CAPTURE(tracker);
+        CHECK(markerIds.MainMarkerId(tracker) < markerCount);
+    }
+}
+
+TEST_CASE("Marker ID ranges past the end of the library are refused")
+{
+    constexpr int hd19Count = 38;
+    cfg::List<cfg::TrackerUnit> trackerConfigs{3};
+    trackerConfigs[0]->markerIdBegin = 0;
+    trackerConfigs[0]->markerIdEnd = 12;
+    trackerConfigs[1]->markerIdBegin = 100;
+    trackerConfigs[1]->markerIdEnd = 112;
+
+    // an explicit range outside the library is a config mistake, not something to rewrite
+    // silently, so the whole partition falls back to fitted defaults
+    const TrackerMarkerIdPartition markerIds{3, 12, hd19Count, trackerConfigs};
+    CHECK(markerIds.MainMarkerId(0) == 0);
+    CHECK(markerIds.MainMarkerId(1) == 12);
+    CHECK(markerIds.MainMarkerId(2) == 24);
+
+    // the same range is fine on a library that reaches that far
+    const TrackerMarkerIdPartition onHd11{3, 12, STAG_LIBRARY_MARKER_COUNTS[0], trackerConfigs};
+    CHECK(onHd11.MainMarkerId(1) == 100);
+}
+
+TEST_CASE("A reference marker range past the end of the library disables it")
+{
+    constexpr int hd19Count = 38;
+    const cfg::List<cfg::TrackerUnit> trackerConfigs{3};
+    const TrackerMarkerIdPartition markerIds{3, 12, hd19Count, trackerConfigs};
+
+    cfg::ReferenceMarker referenceConfig;
+    referenceConfig.enabled = true;
+    referenceConfig.markerIdBegin = 200;
+    referenceConfig.markerIdEnd = 210;
+    CHECK_NOT(ResolveReferenceMarkerRange(referenceConfig, markerIds, hd19Count).has_value());
+
+    // what is left over after the fitted tracker ranges is what it has to use instead
+    referenceConfig.markerIdBegin = 36;
+    referenceConfig.markerIdEnd = 38;
+    const auto accepted = ResolveReferenceMarkerRange(referenceConfig, markerIds, hd19Count);
+    REQUIRE(accepted.has_value());
+    CHECK(accepted->begin == 36);
+    CHECK(accepted->end == 38);
 }
 
 TEST_CASE("Camera and tracker calibration survive being written to a file and read back")
@@ -1450,15 +1617,15 @@ TEST_CASE("A stored board offset is read back as the pose it was solved as")
 TEST_CASE("Valid explicit reference marker range is read without changing tracker ranges")
 {
     const std::string yaml =
-        "%YAML:1.0\n---\nmarkersPerTracker: 17\n"
+        "%YAML:1.0\n---\nmarkerLibrary: 0\nmarkersPerTracker: 17\n"
         "referenceMarker: { enabled: 1, markerIdBegin: 100, markerIdEnd: 110 }\n";
     cv::FileStorage storage{yaml, cv::FileStorage::READ | cv::FileStorage::MEMORY};
     UserConfig config;
     serial::FileStorageReader reader{storage.root()};
     reader.Read(config);
 
-    const TrackerMarkerIdPartition markerIds{3, config.markersPerTracker, config.trackers};
-    const auto referenceRange = ResolveReferenceMarkerRange(config.referenceMarker, markerIds);
+    const TrackerMarkerIdPartition markerIds{3, config.markersPerTracker, StagWrapper::MarkerCount(config.markerLibrary), config.trackers};
+    const auto referenceRange = ResolveReferenceMarkerRange(config.referenceMarker, markerIds, StagWrapper::MarkerCount(config.markerLibrary));
 
     REQUIRE(referenceRange.has_value());
     CHECK(referenceRange->begin == 100);
@@ -1471,7 +1638,7 @@ TEST_CASE("Valid explicit reference marker range is read without changing tracke
 TEST_CASE("Invalid reference marker ranges disable only the reference marker")
 {
     const cfg::List<cfg::TrackerUnit> trackerConfigs{3};
-    const TrackerMarkerIdPartition markerIds{3, 45, trackerConfigs};
+    const TrackerMarkerIdPartition markerIds{3, 45, STAG_LIBRARY_MARKER_COUNTS[0], trackerConfigs};
     cfg::ReferenceMarker referenceConfig;
     referenceConfig.enabled = true;
 
@@ -1479,7 +1646,7 @@ TEST_CASE("Invalid reference marker ranges disable only the reference marker")
     {
         referenceConfig.markerIdBegin = begin;
         referenceConfig.markerIdEnd = end;
-        return ResolveReferenceMarkerRange(referenceConfig, markerIds).has_value();
+        return ResolveReferenceMarkerRange(referenceConfig, markerIds, STAG_LIBRARY_MARKER_COUNTS[0]).has_value();
     };
 
     CHECK_NOT(isAccepted(-1, 10));
@@ -1536,8 +1703,9 @@ TEST_CASE("Existing user config ignores the removed ignoreTracker0 key")
     CHECK(config.previewImageSize == 360);
 }
 
-TEST_CASE("markersPerTracker restores its legacy fallback without changing valid values")
+TEST_CASE("markersPerTracker restores its fallback without changing valid values")
 {
+    // The fallback follows the default, which HD19 and its 38 markers set to 12.
     const auto readMarkersPerTracker = [](int value)
     {
         const std::string yaml = "%YAML:1.0\n---\nmarkersPerTracker: " + std::to_string(value) + "\n";
@@ -1548,8 +1716,8 @@ TEST_CASE("markersPerTracker restores its legacy fallback without changing valid
         return config.markersPerTracker.Get();
     };
 
-    CHECK(readMarkersPerTracker(-1) == 45);
-    CHECK(readMarkersPerTracker(0) == 45);
+    CHECK(readMarkersPerTracker(-1) == 12);
+    CHECK(readMarkersPerTracker(0) == 12);
     CHECK(readMarkersPerTracker(1) == 1);
     CHECK(readMarkersPerTracker(45) == 45);
     CHECK(readMarkersPerTracker(123) == 123);
