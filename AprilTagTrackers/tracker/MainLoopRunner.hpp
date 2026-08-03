@@ -166,6 +166,10 @@ public:
         // using copyTo with masking creates the image where everything but the locations where trackers are predicted to be is black
         // A reference board can be anywhere in the frame, so its opt-in detection
         // must not use tracker-only search masks. Disabled mode remains unchanged.
+        // PROVISIONAL: skipping the mask entirely gives up the detection speedup for the
+        // whole session. Once the camera pose is known, the board's screen position can be
+        // predicted from the HMD pose and added to the mask, so this must return to the
+        // masked path instead of staying full frame.
         if (atleastOneTrackerVisible && !mReferenceMarker)
         {
             grayImg.copyTo(tempGrayMaskedImg, maskSearchImg);
