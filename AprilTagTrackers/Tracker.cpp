@@ -939,6 +939,7 @@ void Tracker::CalibrateTracker()
     math::EstimatePoseSingleMarkersResult markerPoses;
     const RefPtr<cfg::CameraCalib> camCalib = calib_config.cameras[0];
     auto preview = gui->CreatePreviewControl();
+    utils::SteadyTimer detectionLogTimer{};
 
     // TODO: temporary make code easier by allowing returns and handling exceptions properly within loop
     // will be refactored to another class, but easier than pulling out to another function due to amount of state
@@ -949,6 +950,24 @@ void Tracker::CalibrateTracker()
         stagDetector.DetectMarkers(grayImage, dets);
         // draw all markers blue. We will overwrite this with other colors for markers that are part of any of the trackers that we use
         cv::aruco::drawDetectedMarkers(frame.image, dets.corners, dets.ids, COLOR_MARKER_DETECTED);
+
+        // What the detector actually sees, which is the first thing to know when a tracker
+        // never turns green. Nothing detected at all points at the marker library or the
+        // image; IDs outside the configured ranges point at the layout, not at detection.
+        if (detectionLogTimer.Get() > utils::Seconds(1))
+        {
+            detectionLogTimer.Restart();
+            std::string detectedIds;
+            for (const int id : dets.ids)
+            {
+                if (!detectedIds.empty()) detectedIds += ", ";
+                detectedIds += std::to_string(id);
+            }
+            if (detectedIds.empty()) detectedIds = "none";
+            ATT_LOG_INFO("tracker calibration: HD", StagWrapper::ConvertLibrary(user_config.markerLibrary),
+                         ", image ", frame.image.cols, "x", frame.image.rows,
+                         ", markers detected: ", detectedIds);
+        }
 
         math::EstimatePoseSingleMarkers(dets.corners, markerSize, *camCalib, markerPoses);
         ATT_ASSERT(markerPoses.positions.size() == dets.ids.size());
